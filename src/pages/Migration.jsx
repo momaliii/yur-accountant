@@ -189,7 +189,7 @@ export default function Migration() {
           )}
 
           {migrationResult.details && (
-            <div className="space-y-2">
+            <div className="space-y-4">
               <h3 className="font-semibold text-slate-300">Details:</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
                 {Object.entries(migrationResult.details).map(([key, value]) => (
@@ -208,12 +208,47 @@ export default function Migration() {
                   </div>
                 ))}
               </div>
+
+              {/* Error Details */}
+              {migrationResult.summary?.errors > 0 && (
+                <div className="mt-4 pt-4 border-t border-slate-700">
+                  <h3 className="font-semibold text-amber-400 mb-3">Error Details:</h3>
+                  <div className="space-y-3 max-h-64 overflow-y-auto">
+                    {Object.entries(migrationResult.details).map(([key, value]) => {
+                      if (!value.errors || value.errors.length === 0) return null;
+                      return (
+                        <div key={key} className="bg-slate-800/50 rounded-lg p-3">
+                          <h4 className="text-sm font-medium text-slate-300 mb-2 capitalize">
+                            {key.replace(/([A-Z])/g, ' $1').trim()}:
+                          </h4>
+                          <div className="space-y-1">
+                            {value.errors.map((error, idx) => (
+                              <div key={idx} className="text-xs text-amber-400/80">
+                                <span className="text-slate-500">
+                                  {error.id ? `ID: ${error.id} - ` : ''}
+                                </span>
+                                <span>{error.error || 'Unknown error'}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <p className="text-slate-500 text-xs mt-3">
+                    Note: Items with errors were skipped. You can try migrating again after fixing the data, or manually add these items.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
           <div className="mt-4 pt-4 border-t border-slate-700">
             <p className="text-slate-400 text-sm">
-              Your data has been successfully migrated to the cloud. You can now access it from any device.
+              {migrationResult.summary?.errors > 0 
+                ? `${migrationResult.summary.imported} items were successfully migrated. ${migrationResult.summary.errors} items had errors (see details above).`
+                : 'Your data has been successfully migrated to the cloud. You can now access it from any device.'
+              }
             </p>
           </div>
         </Card>

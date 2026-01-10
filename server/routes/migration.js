@@ -111,18 +111,37 @@ export default async function migrationRoutes(fastify, options) {
 
       // Import Income
       if (data.income && Array.isArray(data.income)) {
+        // Map old paymentMethod values to valid enum values
+        const paymentMethodMap = {
+          'bank': 'bank_transfer',
+          'fawaterak_international': 'bank_transfer',
+          'fawaterak': 'bank_transfer',
+          'fawaterak international': 'bank_transfer',
+          'vodafone_cash': 'vodafone_cash',
+          'vodafone cash': 'vodafone_cash',
+          'bank_transfer': 'bank_transfer',
+          'bank transfer': 'bank_transfer',
+          'instapay': 'instapay',
+          'cash': 'cash',
+          'other': 'other',
+        };
+
         for (const income of data.income) {
           try {
             const clientId = income.clientId && idMapping.clients[income.clientId]
               ? idMapping.clients[income.clientId]
               : null;
 
+            // Map payment method to valid enum value (handle null/undefined and trim whitespace)
+            const rawPaymentMethod = income.paymentMethod?.toString().trim().toLowerCase() || '';
+            const paymentMethod = paymentMethodMap[rawPaymentMethod] || 'cash';
+
             const newIncome = new Income({
               userId,
               clientId,
               amount: income.amount || 0,
               currency: income.currency || 'EGP',
-              paymentMethod: income.paymentMethod || 'cash',
+              paymentMethod,
               receivedDate: income.receivedDate ? new Date(income.receivedDate) : new Date(),
               isDeposit: income.isDeposit || false,
               isFixedPortionOnly: income.isFixedPortionOnly || false,
@@ -146,11 +165,27 @@ export default async function migrationRoutes(fastify, options) {
 
       // Import Expenses
       if (data.expenses && Array.isArray(data.expenses)) {
+        // Store expense ID mapping for parentRecurringId resolution
+        const expenseIdMapping = {};
+
         for (const expense of data.expenses) {
           try {
             const clientId = expense.clientId && idMapping.clients[expense.clientId]
               ? idMapping.clients[expense.clientId]
               : null;
+
+            // Handle parentRecurringId - if it's a number (old ID), set to null
+            // We'll update it after all expenses are imported if needed
+            let parentRecurringId = null;
+            if (expense.parentRecurringId) {
+              // If it's already an ObjectId string, use it
+              if (typeof expense.parentRecurringId === 'string' && expense.parentRecurringId.match(/^[0-9a-fA-F]{24}$/)) {
+                parentRecurringId = expense.parentRecurringId;
+              } else if (typeof expense.parentRecurringId === 'number') {
+                // Old numeric ID - will be set to null for now
+                parentRecurringId = null;
+              }
+            }
 
             const newExpense = new Expense({
               userId,
@@ -161,7 +196,7 @@ export default async function migrationRoutes(fastify, options) {
               date: expense.date ? new Date(expense.date) : new Date(),
               description: expense.description,
               isRecurring: expense.isRecurring || false,
-              parentRecurringId: expense.parentRecurringId,
+              parentRecurringId,
               taxCategory: expense.taxCategory,
               isTaxDeductible: expense.isTaxDeductible || false,
               taxRate: expense.taxRate,
@@ -169,9 +204,36 @@ export default async function migrationRoutes(fastify, options) {
               createdAt: expense.createdAt ? new Date(expense.createdAt) : new Date(),
             });
             await newExpense.save();
+            
+            // Store mapping for parentRecurringId resolution
+            if (expense.id) {
+              expenseIdMapping[expense.id] = newExpense._id;
+            }
+            
             results.expenses.imported++;
           } catch (error) {
             results.expenses.errors.push({ id: expense.id, error: error.message });
+          }
+        }
+
+        // Second pass: Update parentRecurringId for expenses that had numeric parent IDs
+        if (data.expenses && Array.isArray(data.expenses)) {
+          for (const expense of data.expenses) {
+            if (expense.parentRecurringId && typeof expense.parentRecurringId === 'number' && expense.id) {
+              try {
+                const newExpenseId = expenseIdMapping[expense.id];
+                const parentId = expenseIdMapping[expense.parentRecurringId];
+                
+                if (newExpenseId && parentId) {
+                  await Expense.updateOne(
+                    { _id: newExpenseId },
+                    { $set: { parentRecurringId: parentId } }
+                  );
+                }
+              } catch (error) {
+                // Silently fail - expense was already imported
+              }
+            }
           }
         }
       }
@@ -203,16 +265,37 @@ export default async function migrationRoutes(fastify, options) {
       if (data.goals && Array.isArray(data.goals)) {
         for (const goal of data.goals) {
           try {
+            const period = goal.period || 'monthly';
+            const createdAt = goal.createdAt ? new Date(goal.createdAt) : new Date();
+            
+            // Generate periodValue if missing or empty
+            let periodValue = goal.periodValue?.toString().trim();
+            if (!periodValue || periodValue === '') {
+              const year = createdAt.getFullYear();
+              const month = String(createdAt.getMonth() + 1).padStart(2, '0');
+              
+              if (period === 'monthly') {
+                periodValue = `${year}-${month}`;
+              } else if (period === 'quarterly') {
+                const quarter = Math.floor(createdAt.getMonth() / 3) + 1;
+                periodValue = `${year}-Q${quarter}`;
+              } else if (period === 'yearly') {
+                periodValue = String(year);
+              } else {
+                periodValue = `${year}-${month}`; // Default to monthly format
+              }
+            }
+
             const newGoal = new Goal({
               userId,
               type: goal.type || 'income',
               targetAmount: goal.targetAmount || 0,
               currentAmount: goal.currentAmount || 0,
-              period: goal.period || 'monthly',
-              periodValue: goal.periodValue || '',
+              period,
+              periodValue,
               category: goal.category,
               notes: goal.notes,
-              createdAt: goal.createdAt ? new Date(goal.createdAt) : new Date(),
+              createdAt,
               updatedAt: goal.updatedAt ? new Date(goal.updatedAt) : new Date(),
             });
             await newGoal.save();
@@ -356,10 +439,18 @@ export default async function migrationRoutes(fastify, options) {
       if (data.openingBalances && Array.isArray(data.openingBalances)) {
         for (const balance of data.openingBalances) {
           try {
+            // Map old periodType values to valid enum values
+            let periodType = balance.periodType || 'monthly';
+            if (periodType === 'month') {
+              periodType = 'monthly';
+            } else if (periodType !== 'monthly' && periodType !== 'yearly') {
+              periodType = 'monthly'; // Default to monthly if invalid
+            }
+
             const existing = await OpeningBalance.findOne({
               userId,
-              periodType: balance.periodType,
-              period: balance.period,
+              periodType,
+              period: balance.period || '',
             });
 
             if (existing) {
@@ -371,7 +462,7 @@ export default async function migrationRoutes(fastify, options) {
             } else {
               const newBalance = new OpeningBalance({
                 userId,
-                periodType: balance.periodType || 'monthly',
+                periodType,
                 period: balance.period || '',
                 amount: balance.amount || 0,
                 currency: balance.currency || 'EGP',
