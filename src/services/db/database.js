@@ -975,7 +975,7 @@ export const backupDB = {
       
 
       // Helper function to import with put operations (updates existing or creates new)
-      // Use bulkPut to prevent duplicates - it updates by ID if exists, creates if not
+      // Check each record individually to prevent duplicates with ++id auto-increment
       const importWithPut = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
@@ -983,30 +983,41 @@ export const backupDB = {
         }
         console.log(`${name}: Starting import of ${items.length} items`);
         
-        try {
-          // Use bulkPut which updates existing records by ID or creates new ones
-          // This prevents duplicates when syncing from server
-          await store.bulkPut(items);
-          console.log(`${name}: Successfully imported ${items.length} items using bulkPut`);
-          return { count: items.length };
-        } catch (err) {
-          console.error(`Error importing ${name} with bulkPut:`, err);
-          // Fallback to individual put operations
-          let count = 0;
-          let errorCount = 0;
-          for (let i = 0; i < items.length; i++) {
-            const item = items[i];
-            try {
-              await store.put(item);
-              count++;
-            } catch (putErr) {
-              errorCount++;
-              console.error(`Error importing ${name} item ${i + 1}:`, item, putErr);
+        let count = 0;
+        let updated = 0;
+        let created = 0;
+        let errorCount = 0;
+        
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
+          try {
+            // Check if record exists by ID
+            if (item.id !== undefined && item.id !== null) {
+              const existing = await store.get(item.id);
+              if (existing) {
+                // Update existing record
+                await store.put(item);
+                updated++;
+              } else {
+                // Create new record with explicit ID
+                await store.put(item);
+                created++;
+              }
+            } else {
+              // No ID provided, let IndexedDB auto-generate
+              await store.add(item);
+              created++;
             }
+            count++;
+          } catch (err) {
+            errorCount++;
+            console.error(`Error importing ${name} item ${i + 1} (ID: ${item.id}):`, err);
+            // Continue with other items even if one fails
           }
-          console.log(`${name}: Imported ${count}/${items.length} items (${errorCount} errors) using fallback`);
-          return { count };
         }
+        
+        console.log(`${name}: Imported ${count}/${items.length} items (${created} created, ${updated} updated, ${errorCount} errors)`);
+        return { count };
       };
       
       // Helper function to update foreign key references using ID mapping
