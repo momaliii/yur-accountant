@@ -135,6 +135,7 @@ export default function Settings() {
     try {
       const text = await file.text();
       console.log('File read, length:', text.length);
+      console.log('First 500 chars of file:', text.substring(0, 500));
       
       const data = JSON.parse(text);
       console.log('JSON parsed successfully. Data keys:', Object.keys(data));
@@ -145,6 +146,14 @@ export default function Settings() {
         debts: data.debts?.length || 0,
         goals: data.goals?.length || 0,
       });
+      console.log('Sample client (first item):', data.clients?.[0]);
+      console.log('Sample income (first item):', data.income?.[0]);
+      
+      // Validate that we actually have data
+      if (!data.clients || data.clients.length === 0) {
+        console.error('ERROR: No clients in backup file!');
+        throw new Error('Backup file appears to be empty or invalid. No clients found.');
+      }
       
       // Validate data structure
       if (!data || typeof data !== 'object') {

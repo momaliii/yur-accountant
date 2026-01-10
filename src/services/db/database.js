@@ -758,7 +758,30 @@ export const backupDB = {
       hasExpenses: !!data.expenses,
       expensesLength: data.expenses?.length || 0,
       dataKeys: Object.keys(data),
+      fullData: data, // Log the full data to see what's actually there
     });
+    
+    // Check if data is actually an object with arrays
+    if (!data || typeof data !== 'object') {
+      throw new Error('Invalid data format: data must be an object');
+    }
+    
+    // Check if arrays exist and have length
+    const hasData = (data.clients && data.clients.length > 0) ||
+                    (data.income && data.income.length > 0) ||
+                    (data.expenses && data.expenses.length > 0) ||
+                    (data.debts && data.debts.length > 0) ||
+                    (data.goals && data.goals.length > 0);
+    
+    if (!hasData) {
+      console.error('No data to import! Data structure:', {
+        clients: Array.isArray(data.clients) ? `Array(${data.clients.length})` : typeof data.clients,
+        income: Array.isArray(data.income) ? `Array(${data.income.length})` : typeof data.income,
+        expenses: Array.isArray(data.expenses) ? `Array(${data.expenses.length})` : typeof data.expenses,
+        sampleKeys: Object.keys(data).slice(0, 10),
+      });
+      throw new Error('No data to import: all arrays are empty or missing');
+    }
     
     // Helper function to transform document to IndexedDB format
     // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
