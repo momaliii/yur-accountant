@@ -750,6 +750,16 @@ export const backupDB = {
   },
   
   async importAll(data) {
+    console.log('importAll called with data:', {
+      hasClients: !!data.clients,
+      clientsLength: data.clients?.length || 0,
+      hasIncome: !!data.income,
+      incomeLength: data.income?.length || 0,
+      hasExpenses: !!data.expenses,
+      expensesLength: data.expenses?.length || 0,
+      dataKeys: Object.keys(data),
+    });
+    
     // Helper function to transform document to IndexedDB format
     // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
     const transformDoc = (doc) => {
@@ -854,9 +864,19 @@ export const backupDB = {
     };
     
     // Transform arrays
-    const transformArray = (arr) => {
-      if (!Array.isArray(arr)) return [];
-      return arr.map(transformDoc);
+    const transformArray = (arr, name) => {
+      if (!Array.isArray(arr)) {
+        console.warn(`${name}: Not an array:`, arr);
+        return [];
+      }
+      if (arr.length === 0) {
+        console.warn(`${name}: Empty array`);
+        return [];
+      }
+      console.log(`Transforming ${name}: ${arr.length} items`);
+      const transformed = arr.map(transformDoc);
+      console.log(`${name}: Transformed ${transformed.length} items`);
+      return transformed;
     };
 
     await db.transaction('rw', db.clients, db.income, db.expenses, db.debts, db.goals, db.invoices, db.todos, db.lists, db.savings, db.savingsTransactions, db.openingBalances, db.expectedIncome, async () => {
@@ -894,23 +914,34 @@ export const backupDB = {
       // Helper function to import with individual put operations
       // This ensures IDs are preserved even with ++id auto-increment
       const importWithPut = async (store, items, name) => {
-        if (!items || items.length === 0) return 0;
+        if (!items || items.length === 0) {
+          console.log(`${name}: No items to import`);
+          return 0;
+        }
+        console.log(`${name}: Starting import of ${items.length} items`);
         let count = 0;
-        for (const item of items) {
+        let errorCount = 0;
+        for (let i = 0; i < items.length; i++) {
+          const item = items[i];
           try {
             // Use put to explicitly set the ID (works with ++id)
             await store.put(item);
             count++;
+            if (i < 3) {
+              console.log(`${name}: Successfully imported item ${i + 1}:`, item.id, item);
+            }
           } catch (err) {
-            console.error(`Error importing ${name} item:`, item, err);
+            errorCount++;
+            console.error(`Error importing ${name} item ${i + 1}:`, item, err);
             // Continue with other items even if one fails
           }
         }
+        console.log(`${name}: Imported ${count}/${items.length} items (${errorCount} errors)`);
         return count;
       };
 
       if (data.lists && data.lists.length > 0) {
-        const transformedLists = transformArray(data.lists);
+        const transformedLists = transformArray(data.lists, 'lists');
         try {
           importCounts.lists = await importWithPut(db.lists, transformedLists, 'lists');
           console.log(`Imported ${importCounts.lists} lists`);
@@ -918,10 +949,13 @@ export const backupDB = {
           console.error('Error importing lists:', err);
           throw new Error(`Failed to import lists: ${err.message}`);
         }
+      } else {
+        console.log('No lists to import');
       }
       
       if (data.clients && data.clients.length > 0) {
-        const transformedClients = transformArray(data.clients);
+        const transformedClients = transformArray(data.clients, 'clients');
+        console.log('Sample client after transform:', transformedClients[0]);
         try {
           importCounts.clients = await importWithPut(db.clients, transformedClients, 'clients');
           console.log(`Imported ${importCounts.clients} clients`);
@@ -929,10 +963,12 @@ export const backupDB = {
           console.error('Error importing clients:', err);
           throw new Error(`Failed to import clients: ${err.message}`);
         }
+      } else {
+        console.log('No clients to import');
       }
       
       if (data.income && data.income.length > 0) {
-        const transformedIncome = transformArray(data.income);
+        const transformedIncome = transformArray(data.income, 'income');
         try {
           importCounts.income = await importWithPut(db.income, transformedIncome, 'income');
           console.log(`Imported ${importCounts.income} income records`);
@@ -940,10 +976,12 @@ export const backupDB = {
           console.error('Error importing income:', err);
           throw new Error(`Failed to import income: ${err.message}`);
         }
+      } else {
+        console.log('No income to import');
       }
       
       if (data.expenses && data.expenses.length > 0) {
-        const transformedExpenses = transformArray(data.expenses);
+        const transformedExpenses = transformArray(data.expenses, 'expenses');
         try {
           importCounts.expenses = await importWithPut(db.expenses, transformedExpenses, 'expenses');
           console.log(`Imported ${importCounts.expenses} expenses`);
@@ -951,10 +989,12 @@ export const backupDB = {
           console.error('Error importing expenses:', err);
           throw new Error(`Failed to import expenses: ${err.message}`);
         }
+      } else {
+        console.log('No expenses to import');
       }
       
       if (data.debts && data.debts.length > 0) {
-        const transformedDebts = transformArray(data.debts);
+        const transformedDebts = transformArray(data.debts, 'debts');
         try {
           importCounts.debts = await importWithPut(db.debts, transformedDebts, 'debts');
           console.log(`Imported ${importCounts.debts} debts`);
@@ -962,10 +1002,12 @@ export const backupDB = {
           console.error('Error importing debts:', err);
           throw new Error(`Failed to import debts: ${err.message}`);
         }
+      } else {
+        console.log('No debts to import');
       }
       
       if (data.goals && data.goals.length > 0) {
-        const transformedGoals = transformArray(data.goals);
+        const transformedGoals = transformArray(data.goals, 'goals');
         try {
           importCounts.goals = await importWithPut(db.goals, transformedGoals, 'goals');
           console.log(`Imported ${importCounts.goals} goals`);
@@ -973,10 +1015,12 @@ export const backupDB = {
           console.error('Error importing goals:', err);
           throw new Error(`Failed to import goals: ${err.message}`);
         }
+      } else {
+        console.log('No goals to import');
       }
       
       if (data.invoices && data.invoices.length > 0) {
-        const transformedInvoices = transformArray(data.invoices);
+        const transformedInvoices = transformArray(data.invoices, 'invoices');
         try {
           importCounts.invoices = await importWithPut(db.invoices, transformedInvoices, 'invoices');
           console.log(`Imported ${importCounts.invoices} invoices`);
@@ -984,10 +1028,12 @@ export const backupDB = {
           console.error('Error importing invoices:', err);
           throw new Error(`Failed to import invoices: ${err.message}`);
         }
+      } else {
+        console.log('No invoices to import');
       }
       
       if (data.todos && data.todos.length > 0) {
-        const transformedTodos = transformArray(data.todos);
+        const transformedTodos = transformArray(data.todos, 'todos');
         try {
           importCounts.todos = await importWithPut(db.todos, transformedTodos, 'todos');
           console.log(`Imported ${importCounts.todos} todos`);
@@ -995,10 +1041,12 @@ export const backupDB = {
           console.error('Error importing todos:', err);
           throw new Error(`Failed to import todos: ${err.message}`);
         }
+      } else {
+        console.log('No todos to import');
       }
       
       if (data.savings && data.savings.length > 0) {
-        const transformedSavings = transformArray(data.savings);
+        const transformedSavings = transformArray(data.savings, 'savings');
         try {
           importCounts.savings = await importWithPut(db.savings, transformedSavings, 'savings');
           console.log(`Imported ${importCounts.savings} savings`);
@@ -1006,10 +1054,12 @@ export const backupDB = {
           console.error('Error importing savings:', err);
           throw new Error(`Failed to import savings: ${err.message}`);
         }
+      } else {
+        console.log('No savings to import');
       }
       
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
-        const transformedSavingsTransactions = transformArray(data.savingsTransactions);
+        const transformedSavingsTransactions = transformArray(data.savingsTransactions, 'savingsTransactions');
         try {
           importCounts.savingsTransactions = await importWithPut(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
           console.log(`Imported ${importCounts.savingsTransactions} savings transactions`);
@@ -1017,10 +1067,12 @@ export const backupDB = {
           console.error('Error importing savings transactions:', err);
           throw new Error(`Failed to import savings transactions: ${err.message}`);
         }
+      } else {
+        console.log('No savingsTransactions to import');
       }
       
       if (data.openingBalances && data.openingBalances.length > 0) {
-        const transformedOpeningBalances = transformArray(data.openingBalances);
+        const transformedOpeningBalances = transformArray(data.openingBalances, 'openingBalances');
         try {
           importCounts.openingBalances = await importWithPut(db.openingBalances, transformedOpeningBalances, 'openingBalances');
           console.log(`Imported ${importCounts.openingBalances} opening balances`);
@@ -1028,10 +1080,12 @@ export const backupDB = {
           console.error('Error importing opening balances:', err);
           throw new Error(`Failed to import opening balances: ${err.message}`);
         }
+      } else {
+        console.log('No openingBalances to import');
       }
       
       if (data.expectedIncome && data.expectedIncome.length > 0) {
-        const transformedExpectedIncome = transformArray(data.expectedIncome);
+        const transformedExpectedIncome = transformArray(data.expectedIncome, 'expectedIncome');
         try {
           importCounts.expectedIncome = await importWithPut(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
           console.log(`Imported ${importCounts.expectedIncome} expected income records`);
@@ -1039,6 +1093,8 @@ export const backupDB = {
           console.error('Error importing expected income:', err);
           throw new Error(`Failed to import expected income: ${err.message}`);
         }
+      } else {
+        console.log('No expectedIncome to import');
       }
 
       const totalImported = Object.values(importCounts).reduce((sum, count) => sum + count, 0);
