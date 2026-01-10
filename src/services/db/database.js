@@ -684,9 +684,11 @@ export const expectedIncomeDB = {
   },
   
   async getByClientAndPeriod(clientId, period) {
+    // Ensure clientId is a number for consistent comparison
+    const normalizedClientId = typeof clientId === 'string' ? parseInt(clientId) : clientId;
     return await db.expectedIncome
       .where('[clientId+period]')
-      .equals([clientId, period])
+      .equals([normalizedClientId, period])
       .first();
   },
   
@@ -711,11 +713,17 @@ export const expectedIncomeDB = {
   },
   
   async upsert(expectedIncome) {
-    const existing = await this.getByClientAndPeriod(expectedIncome.clientId, expectedIncome.period);
+    // Ensure clientId is a number for consistent comparison
+    const normalizedClientId = typeof expectedIncome.clientId === 'string' 
+      ? parseInt(expectedIncome.clientId) 
+      : expectedIncome.clientId;
+    const normalizedExpectedIncome = { ...expectedIncome, clientId: normalizedClientId };
+    
+    const existing = await this.getByClientAndPeriod(normalizedClientId, expectedIncome.period);
     if (existing) {
-      return await this.update(existing.id, expectedIncome);
+      return await this.update(existing.id, normalizedExpectedIncome);
     } else {
-      return await this.add(expectedIncome);
+      return await this.add(normalizedExpectedIncome);
     }
   },
   
@@ -965,6 +973,12 @@ export const backupDB = {
           case 'savings':
             // Savings: name + type
             return `saving_${item.name}_${item.type}`;
+          case 'expectedIncome':
+            // ExpectedIncome: clientId + period (unique combination)
+            return `expectedIncome_${item.clientId || 'null'}_${item.period || 'null'}`;
+          case 'openingBalances':
+            // OpeningBalances: periodType + period
+            return `openingBalance_${item.periodType || 'null'}_${item.period || 'null'}`;
           default:
             // Fallback: use id if available, otherwise use JSON string
             return item.id ? `id_${item.id}` : `item_${JSON.stringify(item).substring(0, 100)}`;

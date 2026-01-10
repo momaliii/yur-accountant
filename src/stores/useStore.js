@@ -1120,7 +1120,11 @@ export const useDataStore = create((set, get) => ({
       
       // Sync to API in background
       const itemWithId = updatedExpectedIncome.find(ei => ei.id === id) || { ...expectedIncome, id };
-      get().syncToAPI('expectedIncome', 'add', itemWithId).catch(() => {});
+      // The API POST endpoint uses upsert logic, so it will update if exists or create new
+      get().syncToAPI('expectedIncome', 'add', itemWithId).catch(async (error) => {
+        // If sync fails, log but don't throw - local operation succeeded
+        console.error('Failed to sync expected income to API:', error);
+      });
       
       return id;
     } catch (error) {
@@ -1135,8 +1139,13 @@ export const useDataStore = create((set, get) => ({
       const updatedExpectedIncome = await expectedIncomeDB.getAll();
       set({ expectedIncome: updatedExpectedIncome });
       
-      // Sync to API in background
-      const updated = { id, ...changes };
+      // Sync to API in background - preserve _id if it exists
+      const existingItem = updatedExpectedIncome.find(ei => ei.id === id);
+      const updated = { 
+        id, 
+        ...(existingItem?._id && { _id: existingItem._id }),
+        ...changes 
+      };
       get().syncToAPI('expectedIncome', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });

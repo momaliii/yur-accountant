@@ -59,9 +59,21 @@ export default function ExpectedIncome() {
   const periodActualIncome = useMemo(() => {
     if (!selectedPeriod) return [];
     const [year, month] = selectedPeriod.split('-');
+    const targetYear = parseInt(year);
+    const targetMonth = parseInt(month) - 1; // JavaScript months are 0-indexed
+    
     return income.filter((i) => {
-      const date = new Date(i.receivedDate);
-      return date.getFullYear() === parseInt(year) && date.getMonth() === parseInt(month) - 1;
+      if (!i.receivedDate) return false;
+      
+      // Handle both ISO string dates and Date objects
+      const date = i.receivedDate instanceof Date 
+        ? i.receivedDate 
+        : new Date(i.receivedDate);
+      
+      // Check if date is valid
+      if (isNaN(date.getTime())) return false;
+      
+      return date.getFullYear() === targetYear && date.getMonth() === targetMonth;
     });
   }, [income, selectedPeriod]);
 
@@ -70,10 +82,21 @@ export default function ExpectedIncome() {
     const activeClients = clients.filter((c) => (c.status || 'active') === 'active');
     
     return activeClients.map((client) => {
-      const expected = periodExpectedIncome.find((ei) => ei.clientId === client.id);
-      const actual = periodActualIncome.filter((i) => i.clientId === client.id);
+      // Ensure type consistency for comparison
+      const clientId = typeof client.id === 'string' ? parseInt(client.id) : client.id;
+      const expected = periodExpectedIncome.find((ei) => {
+        const eiClientId = typeof ei.clientId === 'string' ? parseInt(ei.clientId) : ei.clientId;
+        return eiClientId === clientId;
+      });
+      const actual = periodActualIncome.filter((i) => {
+        // Skip income records without clientId
+        if (i.clientId === null || i.clientId === undefined) return false;
+        const iClientId = typeof i.clientId === 'string' ? parseInt(i.clientId) : i.clientId;
+        return iClientId === clientId;
+      });
       const actualTotal = actual.reduce((sum, i) => {
-        const amount = i.netAmount || i.amount;
+        const amount = i.netAmount || i.amount || 0;
+        if (!amount || isNaN(amount)) return sum;
         return sum + currencyService.convert(amount, i.currency || baseCurrency, baseCurrency, exchangeRates);
       }, 0);
       
