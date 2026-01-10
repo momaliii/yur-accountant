@@ -220,6 +220,18 @@ export default function App() {
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          {/* Redirect old routes to /app routes */}
+          <Route path="/clients" element={<Navigate to="/app/clients" replace />} />
+          <Route path="/clients/:id" element={<Navigate to="/app/clients/:id" replace />} />
+          <Route path="/income" element={<Navigate to="/app/income" replace />} />
+          <Route path="/expenses" element={<Navigate to="/app/expenses" replace />} />
+          <Route path="/debts" element={<Navigate to="/app/debts" replace />} />
+          <Route path="/goals" element={<Navigate to="/app/goals" replace />} />
+          <Route path="/savings" element={<Navigate to="/app/savings" replace />} />
+          <Route path="/todos" element={<Navigate to="/app/todos" replace />} />
+          <Route path="/reports" element={<Navigate to="/app/reports" replace />} />
+          <Route path="/settings" element={<Navigate to="/app/settings" replace />} />
+          <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
           {/* Protected routes */}
           <Route
             path="/app"
