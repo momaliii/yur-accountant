@@ -57,6 +57,7 @@ export default function App() {
   const { exchangeRates, setExchangeRates, lastRateUpdate, hasSeenOnboarding } = useSettingsStore();
   const { initialize: initializeAuth, isAuthenticated } = useAuthStore();
   const [showOnboarding, setShowOnboarding] = useState(!hasSeenOnboarding);
+  const [hasSynced, setHasSynced] = useState(false);
 
   useEffect(() => {
     initializeAuth();
@@ -78,8 +79,10 @@ export default function App() {
         console.log('Database initialized successfully');
         
         // Sync from server if authenticated (for multi-device support)
-        if (isAuthenticated) {
+        // Only sync once per session to prevent duplicates
+        if (isAuthenticated && !hasSynced) {
           console.log('User authenticated, syncing data from server...');
+          setHasSynced(true);
           try {
             const syncResult = await syncService.syncFromServer();
             if (syncResult.success) {
@@ -188,7 +191,14 @@ export default function App() {
     };
     
     initApp();
-  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates, isAuthenticated]);
+  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates, isAuthenticated, hasSynced]);
+  
+  // Reset sync flag when authentication state changes
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setHasSynced(false);
+    }
+  }, [isAuthenticated]);
 
   if (showOnboarding) {
     return <Onboarding onComplete={() => setShowOnboarding(false)} />;

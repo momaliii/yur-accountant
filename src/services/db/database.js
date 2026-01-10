@@ -750,7 +750,56 @@ export const backupDB = {
   },
   
   async importAll(data) {
+    // Helper function to transform MongoDB document to IndexedDB format
+    const transformDoc = (doc) => {
+      if (!doc) return doc;
+      const transformed = { ...doc };
+      
+      // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
+      if (transformed._id) {
+        transformed.id = transformed._id.toString();
+        delete transformed._id;
+      }
+      
+      // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
+      if (transformed.clientId && typeof transformed.clientId === 'object' && transformed.clientId._id) {
+        transformed.clientId = transformed.clientId._id.toString();
+      } else if (transformed.clientId && typeof transformed.clientId === 'object') {
+        transformed.clientId = transformed.clientId.toString();
+      }
+      
+      if (transformed.listId && typeof transformed.listId === 'object' && transformed.listId._id) {
+        transformed.listId = transformed.listId._id.toString();
+      } else if (transformed.listId && typeof transformed.listId === 'object') {
+        transformed.listId = transformed.listId.toString();
+      }
+      
+      if (transformed.savingsId && typeof transformed.savingsId === 'object' && transformed.savingsId._id) {
+        transformed.savingsId = transformed.savingsId._id.toString();
+      } else if (transformed.savingsId && typeof transformed.savingsId === 'object') {
+        transformed.savingsId = transformed.savingsId.toString();
+      }
+      
+      if (transformed.parentRecurringId && typeof transformed.parentRecurringId === 'object' && transformed.parentRecurringId._id) {
+        transformed.parentRecurringId = transformed.parentRecurringId._id.toString();
+      } else if (transformed.parentRecurringId && typeof transformed.parentRecurringId === 'object') {
+        transformed.parentRecurringId = transformed.parentRecurringId.toString();
+      }
+      
+      // Remove __v (MongoDB version key)
+      delete transformed.__v;
+      
+      return transformed;
+    };
+    
+    // Transform arrays
+    const transformArray = (arr) => {
+      if (!Array.isArray(arr)) return [];
+      return arr.map(transformDoc);
+    };
+
     await db.transaction('rw', db.clients, db.income, db.expenses, db.debts, db.goals, db.invoices, db.todos, db.lists, db.savings, db.savingsTransactions, db.openingBalances, db.expectedIncome, async () => {
+      // Clear all data first to prevent duplicates
       await db.clients.clear();
       await db.income.clear();
       await db.expenses.clear();
@@ -764,18 +813,90 @@ export const backupDB = {
       await db.openingBalances.clear();
       await db.expectedIncome.clear();
       
-      if (data.lists) await db.lists.bulkAdd(data.lists);
-      if (data.clients) await db.clients.bulkAdd(data.clients);
-      if (data.income) await db.income.bulkAdd(data.income);
-      if (data.expenses) await db.expenses.bulkAdd(data.expenses);
-      if (data.debts) await db.debts.bulkAdd(data.debts);
-      if (data.goals) await db.goals.bulkAdd(data.goals);
-      if (data.invoices) await db.invoices.bulkAdd(data.invoices);
-      if (data.todos) await db.todos.bulkAdd(data.todos);
-      if (data.savings) await db.savings.bulkAdd(data.savings);
-      if (data.savingsTransactions) await db.savingsTransactions.bulkAdd(data.savingsTransactions);
-      if (data.openingBalances) await db.openingBalances.bulkAdd(data.openingBalances);
-      if (data.expectedIncome) await db.expectedIncome.bulkAdd(data.expectedIncome);
+      // Import transformed data (order matters: lists first, then clients, then others)
+      if (data.lists && data.lists.length > 0) {
+        const transformedLists = transformArray(data.lists);
+        await db.lists.bulkAdd(transformedLists).catch(err => {
+          console.error('Error importing lists:', err);
+        });
+      }
+      
+      if (data.clients && data.clients.length > 0) {
+        const transformedClients = transformArray(data.clients);
+        await db.clients.bulkAdd(transformedClients).catch(err => {
+          console.error('Error importing clients:', err);
+        });
+      }
+      
+      if (data.income && data.income.length > 0) {
+        const transformedIncome = transformArray(data.income);
+        await db.income.bulkAdd(transformedIncome).catch(err => {
+          console.error('Error importing income:', err);
+        });
+      }
+      
+      if (data.expenses && data.expenses.length > 0) {
+        const transformedExpenses = transformArray(data.expenses);
+        await db.expenses.bulkAdd(transformedExpenses).catch(err => {
+          console.error('Error importing expenses:', err);
+        });
+      }
+      
+      if (data.debts && data.debts.length > 0) {
+        const transformedDebts = transformArray(data.debts);
+        await db.debts.bulkAdd(transformedDebts).catch(err => {
+          console.error('Error importing debts:', err);
+        });
+      }
+      
+      if (data.goals && data.goals.length > 0) {
+        const transformedGoals = transformArray(data.goals);
+        await db.goals.bulkAdd(transformedGoals).catch(err => {
+          console.error('Error importing goals:', err);
+        });
+      }
+      
+      if (data.invoices && data.invoices.length > 0) {
+        const transformedInvoices = transformArray(data.invoices);
+        await db.invoices.bulkAdd(transformedInvoices).catch(err => {
+          console.error('Error importing invoices:', err);
+        });
+      }
+      
+      if (data.todos && data.todos.length > 0) {
+        const transformedTodos = transformArray(data.todos);
+        await db.todos.bulkAdd(transformedTodos).catch(err => {
+          console.error('Error importing todos:', err);
+        });
+      }
+      
+      if (data.savings && data.savings.length > 0) {
+        const transformedSavings = transformArray(data.savings);
+        await db.savings.bulkAdd(transformedSavings).catch(err => {
+          console.error('Error importing savings:', err);
+        });
+      }
+      
+      if (data.savingsTransactions && data.savingsTransactions.length > 0) {
+        const transformedSavingsTransactions = transformArray(data.savingsTransactions);
+        await db.savingsTransactions.bulkAdd(transformedSavingsTransactions).catch(err => {
+          console.error('Error importing savings transactions:', err);
+        });
+      }
+      
+      if (data.openingBalances && data.openingBalances.length > 0) {
+        const transformedOpeningBalances = transformArray(data.openingBalances);
+        await db.openingBalances.bulkAdd(transformedOpeningBalances).catch(err => {
+          console.error('Error importing opening balances:', err);
+        });
+      }
+      
+      if (data.expectedIncome && data.expectedIncome.length > 0) {
+        const transformedExpectedIncome = transformArray(data.expectedIncome);
+        await db.expectedIncome.bulkAdd(transformedExpectedIncome).catch(err => {
+          console.error('Error importing expected income:', err);
+        });
+      }
     });
   },
 };
