@@ -814,86 +814,87 @@ export const backupDB = {
       await db.expectedIncome.clear();
       
       // Import transformed data (order matters: lists first, then clients, then others)
+      // Use bulkPut instead of bulkAdd to update existing records and prevent duplicates
       if (data.lists && data.lists.length > 0) {
         const transformedLists = transformArray(data.lists);
-        await db.lists.bulkAdd(transformedLists).catch(err => {
+        await db.lists.bulkPut(transformedLists).catch(err => {
           console.error('Error importing lists:', err);
         });
       }
       
       if (data.clients && data.clients.length > 0) {
         const transformedClients = transformArray(data.clients);
-        await db.clients.bulkAdd(transformedClients).catch(err => {
+        await db.clients.bulkPut(transformedClients).catch(err => {
           console.error('Error importing clients:', err);
         });
       }
       
       if (data.income && data.income.length > 0) {
         const transformedIncome = transformArray(data.income);
-        await db.income.bulkAdd(transformedIncome).catch(err => {
+        await db.income.bulkPut(transformedIncome).catch(err => {
           console.error('Error importing income:', err);
         });
       }
       
       if (data.expenses && data.expenses.length > 0) {
         const transformedExpenses = transformArray(data.expenses);
-        await db.expenses.bulkAdd(transformedExpenses).catch(err => {
+        await db.expenses.bulkPut(transformedExpenses).catch(err => {
           console.error('Error importing expenses:', err);
         });
       }
       
       if (data.debts && data.debts.length > 0) {
         const transformedDebts = transformArray(data.debts);
-        await db.debts.bulkAdd(transformedDebts).catch(err => {
+        await db.debts.bulkPut(transformedDebts).catch(err => {
           console.error('Error importing debts:', err);
         });
       }
       
       if (data.goals && data.goals.length > 0) {
         const transformedGoals = transformArray(data.goals);
-        await db.goals.bulkAdd(transformedGoals).catch(err => {
+        await db.goals.bulkPut(transformedGoals).catch(err => {
           console.error('Error importing goals:', err);
         });
       }
       
       if (data.invoices && data.invoices.length > 0) {
         const transformedInvoices = transformArray(data.invoices);
-        await db.invoices.bulkAdd(transformedInvoices).catch(err => {
+        await db.invoices.bulkPut(transformedInvoices).catch(err => {
           console.error('Error importing invoices:', err);
         });
       }
       
       if (data.todos && data.todos.length > 0) {
         const transformedTodos = transformArray(data.todos);
-        await db.todos.bulkAdd(transformedTodos).catch(err => {
+        await db.todos.bulkPut(transformedTodos).catch(err => {
           console.error('Error importing todos:', err);
         });
       }
       
       if (data.savings && data.savings.length > 0) {
         const transformedSavings = transformArray(data.savings);
-        await db.savings.bulkAdd(transformedSavings).catch(err => {
+        await db.savings.bulkPut(transformedSavings).catch(err => {
           console.error('Error importing savings:', err);
         });
       }
       
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
         const transformedSavingsTransactions = transformArray(data.savingsTransactions);
-        await db.savingsTransactions.bulkAdd(transformedSavingsTransactions).catch(err => {
+        await db.savingsTransactions.bulkPut(transformedSavingsTransactions).catch(err => {
           console.error('Error importing savings transactions:', err);
         });
       }
       
       if (data.openingBalances && data.openingBalances.length > 0) {
         const transformedOpeningBalances = transformArray(data.openingBalances);
-        await db.openingBalances.bulkAdd(transformedOpeningBalances).catch(err => {
+        await db.openingBalances.bulkPut(transformedOpeningBalances).catch(err => {
           console.error('Error importing opening balances:', err);
         });
       }
       
       if (data.expectedIncome && data.expectedIncome.length > 0) {
         const transformedExpectedIncome = transformArray(data.expectedIncome);
-        await db.expectedIncome.bulkAdd(transformedExpectedIncome).catch(err => {
+        await db.expectedIncome.bulkPut(transformedExpectedIncome).catch(err => {
           console.error('Error importing expected income:', err);
         });
       }
