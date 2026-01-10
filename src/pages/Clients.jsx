@@ -338,7 +338,7 @@ export default function Clients() {
               </div>
 
               {/* View Details Link */}
-              <Link to={`/clients/${client.id}`}>
+              <Link to={`/app/clients/${client.id}`}>
                 <Button
                   variant="secondary"
                   className="w-full mt-4 flex items-center justify-center gap-2"
