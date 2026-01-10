@@ -783,26 +783,65 @@ export const backupDB = {
       throw new Error('No data to import: all arrays are empty or missing');
     }
     
+    // Helper function to create a numeric ID from MongoDB _id or string
+    // We need consistent numeric IDs for bulkPut to work with ++id
+    const createNumericId = (id) => {
+      if (id === null || id === undefined) return undefined;
+      
+      // If it's already a number, use it
+      if (typeof id === 'number') return id;
+      
+      // If it's a numeric string, convert to number
+      if (typeof id === 'string' && !isNaN(Number(id)) && id.trim() !== '') {
+        return Number(id);
+      }
+      
+      // For MongoDB ObjectId strings, create a hash-based numeric ID
+      // This ensures the same MongoDB _id always maps to the same IndexedDB id
+      if (typeof id === 'string') {
+        // Simple hash function to convert string to number
+        let hash = 0;
+        for (let i = 0; i < id.length; i++) {
+          const char = id.charCodeAt(i);
+          hash = ((hash << 5) - hash) + char;
+          hash = hash & hash; // Convert to 32bit integer
+        }
+        // Make it positive and ensure it's within safe integer range
+        return Math.abs(hash) % 2147483647; // Max safe integer for IndexedDB
+      }
+      
+      // If it's an object (MongoDB ObjectId), convert to string first
+      if (typeof id === 'object' && id.toString) {
+        return createNumericId(id.toString());
+      }
+      
+      return undefined;
+    };
+    
     // Helper function to transform document to IndexedDB format
     // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
     const transformDoc = (doc) => {
       if (!doc) return doc;
       const transformed = { ...doc };
       
-      // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
+      // Store original MongoDB _id for reference
+      let mongoId = null;
       if (transformed._id) {
-        // MongoDB _id can be ObjectId or string
-        transformed.id = typeof transformed._id === 'object' 
+        mongoId = typeof transformed._id === 'object' 
           ? transformed._id.toString() 
           : transformed._id;
         delete transformed._id;
       }
-      // If id already exists as number (from backup), keep it as is
-      // IndexedDB will use it if we use bulkPut
-      // Ensure id is a number for IndexedDB auto-increment compatibility
-      if (transformed.id !== undefined && typeof transformed.id === 'string' && !isNaN(Number(transformed.id))) {
-        // If it's a numeric string from backup, convert to number
-        transformed.id = Number(transformed.id);
+      
+      // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
+      // Use numeric ID for IndexedDB compatibility with ++id
+      if (mongoId) {
+        transformed.id = createNumericId(mongoId);
+        // Store original MongoDB _id as mongoId for reference
+        transformed.mongoId = mongoId;
+      } else if (transformed.id !== undefined) {
+        // If id already exists (from backup), ensure it's a number
+        transformed.id = createNumericId(transformed.id);
       }
       
       // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
