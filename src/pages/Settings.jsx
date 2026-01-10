@@ -125,11 +125,26 @@ export default function Settings() {
 
   const handleImportData = async (event) => {
     const file = event.target.files?.[0];
-    if (!file) return;
+    if (!file) {
+      console.log('No file selected');
+      return;
+    }
+
+    console.log('Import file selected:', file.name, file.size, 'bytes');
 
     try {
       const text = await file.text();
+      console.log('File read, length:', text.length);
+      
       const data = JSON.parse(text);
+      console.log('JSON parsed successfully. Data keys:', Object.keys(data));
+      console.log('Data counts:', {
+        clients: data.clients?.length || 0,
+        income: data.income?.length || 0,
+        expenses: data.expenses?.length || 0,
+        debts: data.debts?.length || 0,
+        goals: data.goals?.length || 0,
+      });
       
       // Validate data structure
       if (!data || typeof data !== 'object') {
@@ -142,6 +157,7 @@ export default function Settings() {
       );
       
       if (!confirmed) {
+        console.log('Import cancelled by user');
         // Reset file input
         if (fileInputRef.current) {
           fileInputRef.current.value = '';
@@ -149,7 +165,9 @@ export default function Settings() {
         return;
       }
       
+      console.log('Starting import...');
       await backupDB.importAll(data);
+      console.log('Import completed successfully');
       
       // Show success message
       setSaveStatus('import');
