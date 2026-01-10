@@ -8,6 +8,7 @@ import UpdateChecker from './components/UpdateChecker';
 import { useDataStore, useSettingsStore } from './stores/useStore';
 import { useAuthStore } from './stores/authStore';
 import currencyService from './services/currency/currencyService';
+import syncService from './services/sync/syncService';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -54,7 +55,7 @@ const LoadingSpinner = () => (
 export default function App() {
   const { initializeData, processRecurringExpenses, cleanupDuplicateExpenses } = useDataStore();
   const { exchangeRates, setExchangeRates, lastRateUpdate, hasSeenOnboarding } = useSettingsStore();
-  const { initialize: initializeAuth } = useAuthStore();
+  const { initialize: initializeAuth, isAuthenticated } = useAuthStore();
   const [showOnboarding, setShowOnboarding] = useState(!hasSeenOnboarding);
 
   useEffect(() => {
@@ -75,6 +76,24 @@ export default function App() {
         console.log('Initializing database...');
         await initializeData();
         console.log('Database initialized successfully');
+        
+        // Sync from server if authenticated (for multi-device support)
+        if (isAuthenticated) {
+          console.log('User authenticated, syncing data from server...');
+          try {
+            const syncResult = await syncService.syncFromServer();
+            if (syncResult.success) {
+              console.log('Data synced from server successfully');
+              // Reload data after sync
+              await initializeData();
+            } else {
+              console.log('Sync skipped:', syncResult.error);
+            }
+          } catch (error) {
+            console.error('Failed to sync from server:', error);
+            // Continue even if sync fails - local data is still available
+          }
+        }
         
         // Clean up any duplicate expenses first
         console.log('Cleaning up duplicate expenses...');
@@ -169,7 +188,7 @@ export default function App() {
     };
     
     initApp();
-  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates]);
+  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates, isAuthenticated]);
 
   if (showOnboarding) {
     return <Onboarding onComplete={() => setShowOnboarding(false)} />;
