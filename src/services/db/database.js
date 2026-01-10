@@ -750,40 +750,101 @@ export const backupDB = {
   },
   
   async importAll(data) {
-    // Helper function to transform MongoDB document to IndexedDB format
+    // Helper function to transform document to IndexedDB format
+    // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
     const transformDoc = (doc) => {
       if (!doc) return doc;
       const transformed = { ...doc };
       
       // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
       if (transformed._id) {
-        transformed.id = transformed._id.toString();
+        // MongoDB _id can be ObjectId or string
+        transformed.id = typeof transformed._id === 'object' 
+          ? transformed._id.toString() 
+          : transformed._id;
         delete transformed._id;
+      }
+      // If id already exists as number (from backup), keep it as is
+      // IndexedDB will use it if we use bulkPut
+      // Ensure id is a number for IndexedDB auto-increment compatibility
+      if (transformed.id !== undefined && typeof transformed.id === 'string' && !isNaN(Number(transformed.id))) {
+        // If it's a numeric string from backup, convert to number
+        transformed.id = Number(transformed.id);
       }
       
       // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
-      if (transformed.clientId && typeof transformed.clientId === 'object' && transformed.clientId._id) {
-        transformed.clientId = transformed.clientId._id.toString();
-      } else if (transformed.clientId && typeof transformed.clientId === 'object') {
-        transformed.clientId = transformed.clientId.toString();
+      // Handle both ObjectId objects and numeric IDs from backups
+      // Keep numeric IDs as numbers for IndexedDB compatibility
+      if (transformed.clientId !== null && transformed.clientId !== undefined) {
+        if (typeof transformed.clientId === 'object' && transformed.clientId._id) {
+          transformed.clientId = transformed.clientId._id.toString();
+        } else if (typeof transformed.clientId === 'object') {
+          transformed.clientId = transformed.clientId.toString();
+        }
+        // If it's a number (from backup), keep it as number
+        // If it's a numeric string, convert to number for consistency
+        else if (typeof transformed.clientId === 'string' && !isNaN(Number(transformed.clientId))) {
+          transformed.clientId = Number(transformed.clientId);
+        }
+        // Otherwise keep as is (number or string)
       }
       
-      if (transformed.listId && typeof transformed.listId === 'object' && transformed.listId._id) {
-        transformed.listId = transformed.listId._id.toString();
-      } else if (transformed.listId && typeof transformed.listId === 'object') {
-        transformed.listId = transformed.listId.toString();
+      if (transformed.listId !== null && transformed.listId !== undefined) {
+        if (typeof transformed.listId === 'object' && transformed.listId._id) {
+          transformed.listId = transformed.listId._id.toString();
+        } else if (typeof transformed.listId === 'object') {
+          transformed.listId = transformed.listId.toString();
+        }
+        else if (typeof transformed.listId === 'string' && !isNaN(Number(transformed.listId))) {
+          transformed.listId = Number(transformed.listId);
+        }
       }
       
-      if (transformed.savingsId && typeof transformed.savingsId === 'object' && transformed.savingsId._id) {
-        transformed.savingsId = transformed.savingsId._id.toString();
-      } else if (transformed.savingsId && typeof transformed.savingsId === 'object') {
-        transformed.savingsId = transformed.savingsId.toString();
+      if (transformed.savingsId !== null && transformed.savingsId !== undefined) {
+        if (typeof transformed.savingsId === 'object' && transformed.savingsId._id) {
+          transformed.savingsId = transformed.savingsId._id.toString();
+        } else if (typeof transformed.savingsId === 'object') {
+          transformed.savingsId = transformed.savingsId.toString();
+        }
+        else if (typeof transformed.savingsId === 'string' && !isNaN(Number(transformed.savingsId))) {
+          transformed.savingsId = Number(transformed.savingsId);
+        }
       }
       
-      if (transformed.parentRecurringId && typeof transformed.parentRecurringId === 'object' && transformed.parentRecurringId._id) {
-        transformed.parentRecurringId = transformed.parentRecurringId._id.toString();
-      } else if (transformed.parentRecurringId && typeof transformed.parentRecurringId === 'object') {
-        transformed.parentRecurringId = transformed.parentRecurringId.toString();
+      if (transformed.parentRecurringId !== null && transformed.parentRecurringId !== undefined) {
+        if (typeof transformed.parentRecurringId === 'object' && transformed.parentRecurringId._id) {
+          transformed.parentRecurringId = transformed.parentRecurringId._id.toString();
+        } else if (typeof transformed.parentRecurringId === 'object') {
+          transformed.parentRecurringId = transformed.parentRecurringId.toString();
+        }
+        // Keep numeric parentRecurringId as number (from backup)
+        else if (typeof transformed.parentRecurringId === 'string' && !isNaN(Number(transformed.parentRecurringId))) {
+          transformed.parentRecurringId = Number(transformed.parentRecurringId);
+        }
+      }
+      
+      // Fix goals periodValue if missing (from backup files)
+      if (transformed.periodValue === null || transformed.periodValue === undefined || transformed.periodValue === '') {
+        const period = transformed.period || 'monthly';
+        const createdAt = transformed.createdAt ? new Date(transformed.createdAt) : new Date();
+        const year = createdAt.getFullYear();
+        const month = String(createdAt.getMonth() + 1).padStart(2, '0');
+        
+        if (period === 'monthly') {
+          transformed.periodValue = `${year}-${month}`;
+        } else if (period === 'quarterly') {
+          const quarter = Math.floor(createdAt.getMonth() / 3) + 1;
+          transformed.periodValue = `${year}-Q${quarter}`;
+        } else if (period === 'yearly') {
+          transformed.periodValue = String(year);
+        } else {
+          transformed.periodValue = `${year}-${month}`;
+        }
+      }
+      
+      // Fix openingBalances periodType (from backup files)
+      if (transformed.periodType === 'month') {
+        transformed.periodType = 'monthly';
       }
       
       // Remove __v (MongoDB version key)
@@ -814,90 +875,168 @@ export const backupDB = {
       await db.expectedIncome.clear();
       
       // Import transformed data (order matters: lists first, then clients, then others)
-      // Use bulkPut instead of bulkAdd to update existing records and prevent duplicates
+      // Use bulkPut to preserve IDs from backup files
+      let importCounts = {
+        lists: 0,
+        clients: 0,
+        income: 0,
+        expenses: 0,
+        debts: 0,
+        goals: 0,
+        invoices: 0,
+        todos: 0,
+        savings: 0,
+        savingsTransactions: 0,
+        openingBalances: 0,
+        expectedIncome: 0,
+      };
+
       if (data.lists && data.lists.length > 0) {
         const transformedLists = transformArray(data.lists);
-        await db.lists.bulkPut(transformedLists).catch(err => {
+        try {
+          await db.lists.bulkPut(transformedLists);
+          importCounts.lists = transformedLists.length;
+          console.log(`Imported ${importCounts.lists} lists`);
+        } catch (err) {
           console.error('Error importing lists:', err);
-        });
+          throw new Error(`Failed to import lists: ${err.message}`);
+        }
       }
       
       if (data.clients && data.clients.length > 0) {
         const transformedClients = transformArray(data.clients);
-        await db.clients.bulkPut(transformedClients).catch(err => {
+        try {
+          await db.clients.bulkPut(transformedClients);
+          importCounts.clients = transformedClients.length;
+          console.log(`Imported ${importCounts.clients} clients`);
+        } catch (err) {
           console.error('Error importing clients:', err);
-        });
+          throw new Error(`Failed to import clients: ${err.message}`);
+        }
       }
       
       if (data.income && data.income.length > 0) {
         const transformedIncome = transformArray(data.income);
-        await db.income.bulkPut(transformedIncome).catch(err => {
+        try {
+          await db.income.bulkPut(transformedIncome);
+          importCounts.income = transformedIncome.length;
+          console.log(`Imported ${importCounts.income} income records`);
+        } catch (err) {
           console.error('Error importing income:', err);
-        });
+          throw new Error(`Failed to import income: ${err.message}`);
+        }
       }
       
       if (data.expenses && data.expenses.length > 0) {
         const transformedExpenses = transformArray(data.expenses);
-        await db.expenses.bulkPut(transformedExpenses).catch(err => {
+        try {
+          await db.expenses.bulkPut(transformedExpenses);
+          importCounts.expenses = transformedExpenses.length;
+          console.log(`Imported ${importCounts.expenses} expenses`);
+        } catch (err) {
           console.error('Error importing expenses:', err);
-        });
+          throw new Error(`Failed to import expenses: ${err.message}`);
+        }
       }
       
       if (data.debts && data.debts.length > 0) {
         const transformedDebts = transformArray(data.debts);
-        await db.debts.bulkPut(transformedDebts).catch(err => {
+        try {
+          await db.debts.bulkPut(transformedDebts);
+          importCounts.debts = transformedDebts.length;
+          console.log(`Imported ${importCounts.debts} debts`);
+        } catch (err) {
           console.error('Error importing debts:', err);
-        });
+          throw new Error(`Failed to import debts: ${err.message}`);
+        }
       }
       
       if (data.goals && data.goals.length > 0) {
         const transformedGoals = transformArray(data.goals);
-        await db.goals.bulkPut(transformedGoals).catch(err => {
+        try {
+          await db.goals.bulkPut(transformedGoals);
+          importCounts.goals = transformedGoals.length;
+          console.log(`Imported ${importCounts.goals} goals`);
+        } catch (err) {
           console.error('Error importing goals:', err);
-        });
+          throw new Error(`Failed to import goals: ${err.message}`);
+        }
       }
       
       if (data.invoices && data.invoices.length > 0) {
         const transformedInvoices = transformArray(data.invoices);
-        await db.invoices.bulkPut(transformedInvoices).catch(err => {
+        try {
+          await db.invoices.bulkPut(transformedInvoices);
+          importCounts.invoices = transformedInvoices.length;
+          console.log(`Imported ${importCounts.invoices} invoices`);
+        } catch (err) {
           console.error('Error importing invoices:', err);
-        });
+          throw new Error(`Failed to import invoices: ${err.message}`);
+        }
       }
       
       if (data.todos && data.todos.length > 0) {
         const transformedTodos = transformArray(data.todos);
-        await db.todos.bulkPut(transformedTodos).catch(err => {
+        try {
+          await db.todos.bulkPut(transformedTodos);
+          importCounts.todos = transformedTodos.length;
+          console.log(`Imported ${importCounts.todos} todos`);
+        } catch (err) {
           console.error('Error importing todos:', err);
-        });
+          throw new Error(`Failed to import todos: ${err.message}`);
+        }
       }
       
       if (data.savings && data.savings.length > 0) {
         const transformedSavings = transformArray(data.savings);
-        await db.savings.bulkPut(transformedSavings).catch(err => {
+        try {
+          await db.savings.bulkPut(transformedSavings);
+          importCounts.savings = transformedSavings.length;
+          console.log(`Imported ${importCounts.savings} savings`);
+        } catch (err) {
           console.error('Error importing savings:', err);
-        });
+          throw new Error(`Failed to import savings: ${err.message}`);
+        }
       }
       
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
         const transformedSavingsTransactions = transformArray(data.savingsTransactions);
-        await db.savingsTransactions.bulkPut(transformedSavingsTransactions).catch(err => {
+        try {
+          await db.savingsTransactions.bulkPut(transformedSavingsTransactions);
+          importCounts.savingsTransactions = transformedSavingsTransactions.length;
+          console.log(`Imported ${importCounts.savingsTransactions} savings transactions`);
+        } catch (err) {
           console.error('Error importing savings transactions:', err);
-        });
+          throw new Error(`Failed to import savings transactions: ${err.message}`);
+        }
       }
       
       if (data.openingBalances && data.openingBalances.length > 0) {
         const transformedOpeningBalances = transformArray(data.openingBalances);
-        await db.openingBalances.bulkPut(transformedOpeningBalances).catch(err => {
+        try {
+          await db.openingBalances.bulkPut(transformedOpeningBalances);
+          importCounts.openingBalances = transformedOpeningBalances.length;
+          console.log(`Imported ${importCounts.openingBalances} opening balances`);
+        } catch (err) {
           console.error('Error importing opening balances:', err);
-        });
+          throw new Error(`Failed to import opening balances: ${err.message}`);
+        }
       }
       
       if (data.expectedIncome && data.expectedIncome.length > 0) {
         const transformedExpectedIncome = transformArray(data.expectedIncome);
-        await db.expectedIncome.bulkPut(transformedExpectedIncome).catch(err => {
+        try {
+          await db.expectedIncome.bulkPut(transformedExpectedIncome);
+          importCounts.expectedIncome = transformedExpectedIncome.length;
+          console.log(`Imported ${importCounts.expectedIncome} expected income records`);
+        } catch (err) {
           console.error('Error importing expected income:', err);
-        });
+          throw new Error(`Failed to import expected income: ${err.message}`);
+        }
       }
+
+      const totalImported = Object.values(importCounts).reduce((sum, count) => sum + count, 0);
+      console.log(`Total imported: ${totalImported} items`, importCounts);
     });
   },
   

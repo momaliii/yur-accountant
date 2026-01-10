@@ -145,13 +145,32 @@ export default function Migration() {
         throw new Error('Invalid backup file format');
       }
 
+      console.log('Restoring backup with data:', {
+        clients: data.clients?.length || 0,
+        income: data.income?.length || 0,
+        expenses: data.expenses?.length || 0,
+        debts: data.debts?.length || 0,
+        goals: data.goals?.length || 0,
+      });
+
       // Import the backup data
       await backupDB.importAll(data);
-      setSuccess('Backup restored successfully!');
+      
+      console.log('Backup import completed');
+      
+      setSuccess('Backup restored successfully! Refreshing data...');
+      
+      // Reload data stats and refresh store
       await loadLocalDataStats();
       await initializeData();
+      
+      // Show success message
+      setTimeout(() => {
+        setSuccess('Backup restored successfully! All data has been imported.');
+      }, 500);
     } catch (error) {
-      setError('Failed to restore backup: ' + error.message);
+      console.error('Restore error:', error);
+      setError('Failed to restore backup: ' + (error.message || 'Unknown error'));
     } finally {
       setIsRestoring(false);
       // Reset file input
