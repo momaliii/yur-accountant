@@ -80,7 +80,12 @@ export default function App() {
         
         // Sync from server if authenticated (for multi-device support)
         // Only sync once per session to prevent duplicates
-        if (isAuthenticated && !hasSynced) {
+        // Skip sync if user just deleted data
+        const skipAutoSync = localStorage.getItem('skipAutoSync') === 'true';
+        if (skipAutoSync) {
+          localStorage.removeItem('skipAutoSync');
+          console.log('Skipping auto-sync (data was just deleted)');
+        } else if (isAuthenticated && !hasSynced) {
           console.log('User authenticated, syncing data from server...');
           setHasSynced(true);
           try {

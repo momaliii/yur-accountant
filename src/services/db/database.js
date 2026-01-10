@@ -903,20 +903,58 @@ export const backupDB = {
   
   // Clear all data from IndexedDB
   async clearAll() {
-    await db.transaction('rw', db.clients, db.income, db.expenses, db.debts, db.goals, db.invoices, db.todos, db.lists, db.savings, db.savingsTransactions, db.openingBalances, db.expectedIncome, async () => {
-      await db.clients.clear();
-      await db.income.clear();
-      await db.expenses.clear();
-      await db.debts.clear();
-      await db.goals.clear();
-      await db.invoices.clear();
-      await db.todos.clear();
-      await db.lists.clear();
-      await db.savings.clear();
-      await db.savingsTransactions.clear();
-      await db.openingBalances.clear();
-      await db.expectedIncome.clear();
-    });
+    try {
+      // Close the database first
+      await db.close();
+      
+      // Delete the entire database
+      await new Promise((resolve, reject) => {
+        const deleteRequest = indexedDB.deleteDatabase('MediaBuyerDashboard');
+        deleteRequest.onsuccess = () => {
+          console.log('Database deleted successfully');
+          resolve();
+        };
+        deleteRequest.onerror = () => {
+          console.error('Error deleting database:', deleteRequest.error);
+          reject(deleteRequest.error);
+        };
+        deleteRequest.onblocked = () => {
+          console.warn('Database deletion blocked, trying again...');
+          // Try again after a short delay
+          setTimeout(() => {
+            indexedDB.deleteDatabase('MediaBuyerDashboard').onsuccess = resolve;
+          }, 100);
+        };
+      });
+      
+      // Reopen the database (it will be recreated)
+      await db.open();
+      
+      return true;
+    } catch (error) {
+      console.error('Error in clearAll:', error);
+      // Fallback: try clearing tables individually
+      try {
+        await db.transaction('rw', db.clients, db.income, db.expenses, db.debts, db.goals, db.invoices, db.todos, db.lists, db.savings, db.savingsTransactions, db.openingBalances, db.expectedIncome, async () => {
+          await db.clients.clear();
+          await db.income.clear();
+          await db.expenses.clear();
+          await db.debts.clear();
+          await db.goals.clear();
+          await db.invoices.clear();
+          await db.todos.clear();
+          await db.lists.clear();
+          await db.savings.clear();
+          await db.savingsTransactions.clear();
+          await db.openingBalances.clear();
+          await db.expectedIncome.clear();
+        });
+        return true;
+      } catch (fallbackError) {
+        console.error('Fallback clear also failed:', fallbackError);
+        throw fallbackError;
+      }
+    }
   },
 };
 

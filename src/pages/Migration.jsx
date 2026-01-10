@@ -15,6 +15,7 @@ export default function Migration() {
   const [isExporting, setIsExporting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [isDeletingServer, setIsDeletingServer] = useState(false);
   const [isRestoring, setIsRestoring] = useState(false);
   const [migrationResult, setMigrationResult] = useState(null);
   const [error, setError] = useState('');
@@ -107,13 +108,22 @@ export default function Migration() {
     setSuccess('');
 
     try {
+      // Clear sync flag to prevent auto-sync after deletion
+      localStorage.removeItem('lastSyncTime');
+      localStorage.setItem('skipAutoSync', 'true');
+      
+      // Delete all data
       await backupDB.clearAll();
-      setSuccess('All local data has been deleted successfully.');
-      await loadLocalDataStats();
-      await initializeData();
+      
+      // Clear the store state
+      setSuccess('All local data has been deleted successfully. Refreshing page...');
+      
+      // Wait a moment then reload to ensure clean state
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
     } catch (error) {
       setError('Failed to delete data: ' + error.message);
-    } finally {
       setIsDeleting(false);
     }
   };
@@ -146,6 +156,30 @@ export default function Migration() {
       setIsRestoring(false);
       // Reset file input
       event.target.value = '';
+    }
+  };
+
+  const handleDeleteServerData = async () => {
+    if (!window.confirm('⚠️ WARNING: This will delete ALL data from MongoDB server!\n\nThis will permanently delete all your data on the server. This action cannot be undone.\n\nAre you sure you want to continue?')) {
+      return;
+    }
+
+    if (!window.confirm('⚠️ FINAL CONFIRMATION: Delete ALL server data?\n\nThis will permanently delete all your data from MongoDB. Only proceed if you have a backup.\n\nDelete all server data?')) {
+      return;
+    }
+
+    setIsDeletingServer(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const result = await migrationAPI.clearAll();
+      setSuccess(`Successfully deleted ${result.totalDeleted || 0} items from server.`);
+      await loadLocalDataStats();
+    } catch (error) {
+      setError('Failed to delete server data: ' + (error.message || 'Unknown error'));
+    } finally {
+      setIsDeletingServer(false);
     }
   };
 
@@ -232,14 +266,14 @@ export default function Migration() {
         </div>
       </Card>
 
-      {/* Delete All Data Section */}
+      {/* Delete All Local Data Section */}
       <Card className="border-red-500/30 bg-red-500/5">
         <div className="flex items-center gap-3 mb-4">
           <Trash2 className="w-6 h-6 text-red-400" />
           <h2 className="text-xl font-semibold text-red-400">Delete All Local Data</h2>
         </div>
         <p className="text-slate-400 mb-4">
-          <strong className="text-red-400">⚠️ WARNING:</strong> This will permanently delete all local data from your browser. 
+          <strong className="text-red-400">⚠️ WARNING:</strong> This will permanently delete all local data from your browser (IndexedDB). 
           This action cannot be undone. Make sure you have exported a backup or migrated to cloud first.
         </p>
         <Button
@@ -249,7 +283,28 @@ export default function Migration() {
           variant="outline"
           className="border-red-500/50 text-red-400 hover:bg-red-500/10"
         >
-          Delete All Data
+          Delete All Local Data
+        </Button>
+      </Card>
+
+      {/* Delete All Server Data Section */}
+      <Card className="border-orange-500/30 bg-orange-500/5">
+        <div className="flex items-center gap-3 mb-4">
+          <Trash2 className="w-6 h-6 text-orange-400" />
+          <h2 className="text-xl font-semibold text-orange-400">Delete All Server Data (MongoDB)</h2>
+        </div>
+        <p className="text-slate-400 mb-4">
+          <strong className="text-orange-400">⚠️ WARNING:</strong> This will permanently delete all your data from MongoDB server. 
+          This will remove duplicates and all data on the server. This action cannot be undone. Make sure you have exported a backup first.
+        </p>
+        <Button
+          onClick={handleDeleteServerData}
+          loading={isDeletingServer}
+          icon={Trash2}
+          variant="outline"
+          className="border-orange-500/50 text-orange-400 hover:bg-orange-500/10"
+        >
+          Delete All Server Data
         </Button>
       </Card>
 

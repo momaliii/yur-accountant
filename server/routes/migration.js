@@ -542,4 +542,54 @@ export default async function migrationRoutes(fastify, options) {
       return reply.code(500).send({ error: 'Migration failed', message: error.message });
     }
   });
+
+  // Delete all user data from MongoDB
+  fastify.delete('/clear', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+    try {
+      const userId = getUserId(request);
+
+      // Delete all user data
+      const deleteResults = await Promise.all([
+        Client.deleteMany({ userId }),
+        Income.deleteMany({ userId }),
+        Expense.deleteMany({ userId }),
+        Debt.deleteMany({ userId }),
+        Goal.deleteMany({ userId }),
+        Invoice.deleteMany({ userId }),
+        Todo.deleteMany({ userId }),
+        List.deleteMany({ userId }),
+        Saving.deleteMany({ userId }),
+        SavingsTransaction.deleteMany({ userId }),
+        OpeningBalance.deleteMany({ userId }),
+        ExpectedIncome.deleteMany({ userId }),
+      ]);
+
+      const counts = {
+        clients: deleteResults[0].deletedCount || 0,
+        income: deleteResults[1].deletedCount || 0,
+        expenses: deleteResults[2].deletedCount || 0,
+        debts: deleteResults[3].deletedCount || 0,
+        goals: deleteResults[4].deletedCount || 0,
+        invoices: deleteResults[5].deletedCount || 0,
+        todos: deleteResults[6].deletedCount || 0,
+        lists: deleteResults[7].deletedCount || 0,
+        savings: deleteResults[8].deletedCount || 0,
+        savingsTransactions: deleteResults[9].deletedCount || 0,
+        openingBalances: deleteResults[10].deletedCount || 0,
+        expectedIncome: deleteResults[11].deletedCount || 0,
+      };
+
+      const totalDeleted = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+      return {
+        success: true,
+        message: `Deleted ${totalDeleted} items from server`,
+        counts,
+        totalDeleted,
+      };
+    } catch (error) {
+      fastify.log.error(error);
+      return reply.code(500).send({ error: 'Failed to delete data', message: error.message });
+    }
+  });
 }
