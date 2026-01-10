@@ -175,7 +175,22 @@ export default function Settings() {
       }
       
       console.log('Starting import...');
-      await backupDB.importAll(data);
+      console.log('Data being passed to importAll:', {
+        clientsCount: data.clients?.length || 0,
+        incomeCount: data.income?.length || 0,
+        expensesCount: data.expenses?.length || 0,
+        firstClient: data.clients?.[0],
+        firstIncome: data.income?.[0],
+      });
+      
+      // Make a deep copy to ensure data isn't modified
+      const dataCopy = JSON.parse(JSON.stringify(data));
+      console.log('Data copy made, counts:', {
+        clients: dataCopy.clients?.length || 0,
+        income: dataCopy.income?.length || 0,
+      });
+      
+      await backupDB.importAll(dataCopy);
       console.log('Import completed successfully');
       
       // Show success message
