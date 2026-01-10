@@ -113,10 +113,22 @@ export const useDataStore = create((set, get) => ({
           await api.add(data);
           break;
         case 'update':
-          await api.update(data.id || data._id, data);
+          // Use mongoId if available (for records synced from server), otherwise use id
+          const updateId = data.mongoId || data._id || data.id;
+          if (!updateId) {
+            console.warn(`Cannot update ${entity}: no ID found`, data);
+            return;
+          }
+          await api.update(updateId, data);
           break;
         case 'delete':
-          await api.delete(data.id || data._id);
+          // Use mongoId if available (for records synced from server), otherwise use id
+          const deleteId = data.mongoId || data._id || data.id;
+          if (!deleteId) {
+            console.warn(`Cannot delete ${entity}: no ID found`, data);
+            return;
+          }
+          await api.delete(deleteId);
           break;
       }
     } catch (error) {
@@ -183,12 +195,14 @@ export const useDataStore = create((set, get) => ({
   updateClient: async (id, changes) => {
     try {
       await clientsDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full client object to include mongoId for syncing
+      const client = get().clients.find((c) => c.id === id);
+      const updated = { ...client, ...changes, id };
       set((state) => ({
         clients: state.clients.map((c) => (c.id === id ? { ...c, ...changes } : c)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('client', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -231,12 +245,14 @@ export const useDataStore = create((set, get) => ({
   updateIncome: async (id, changes) => {
     try {
       await incomeDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full income object to include mongoId for syncing
+      const income = get().income.find((i) => i.id === id);
+      const updated = { ...income, ...changes, id };
       set((state) => ({
         income: state.income.map((i) => (i.id === id ? { ...i, ...changes } : i)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('income', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -279,12 +295,14 @@ export const useDataStore = create((set, get) => ({
   updateExpense: async (id, changes) => {
     try {
       await expensesDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full expense object to include mongoId for syncing
+      const expense = get().expenses.find((e) => e.id === id);
+      const updated = { ...expense, ...changes, id };
       set((state) => ({
         expenses: state.expenses.map((e) => (e.id === id ? { ...e, ...changes } : e)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('expense', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -563,12 +581,14 @@ export const useDataStore = create((set, get) => ({
   updateDebt: async (id, changes) => {
     try {
       await debtsDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full debt object to include mongoId for syncing
+      const debt = get().debts.find((d) => d.id === id);
+      const updated = { ...debt, ...changes, id };
       set((state) => ({
         debts: state.debts.map((d) => (d.id === id ? { ...d, ...changes } : d)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('debt', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -611,12 +631,14 @@ export const useDataStore = create((set, get) => ({
   updateGoal: async (id, changes) => {
     try {
       await goalsDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full goal object to include mongoId for syncing
+      const goal = get().goals.find((g) => g.id === id);
+      const updated = { ...goal, ...changes, id };
       set((state) => ({
         goals: state.goals.map((g) => (g.id === id ? { ...g, ...changes } : g)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('goal', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -675,12 +697,14 @@ export const useDataStore = create((set, get) => ({
   updateInvoice: async (id, changes) => {
     try {
       await invoicesDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full invoice object to include mongoId for syncing
+      const invoice = get().invoices.find((inv) => inv.id === id);
+      const updated = { ...invoice, ...changes, id };
       set((state) => ({
         invoices: state.invoices.map((inv) => (inv.id === id ? { ...inv, ...changes } : inv)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('invoice', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -723,12 +747,14 @@ export const useDataStore = create((set, get) => ({
   updateTodo: async (id, changes) => {
     try {
       await todosDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full todo object to include mongoId for syncing
+      const todo = get().todos.find((t) => t.id === id);
+      const updated = { ...todo, ...changes, id };
       set((state) => ({
         todos: state.todos.map((t) => (t.id === id ? { ...t, ...changes } : t)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('todo', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -805,12 +831,14 @@ export const useDataStore = create((set, get) => ({
   updateList: async (id, changes) => {
     try {
       await listsDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full list object to include mongoId for syncing
+      const list = get().lists.find((l) => l.id === id);
+      const updated = { ...list, ...changes, id };
       set((state) => ({
         lists: state.lists.map((l) => (l.id === id ? { ...l, ...changes } : l)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('list', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -853,12 +881,14 @@ export const useDataStore = create((set, get) => ({
   updateSavings: async (id, changes) => {
     try {
       await savingsDB.update(id, changes);
-      const updated = { id, ...changes };
+      // Get the full saving object to include mongoId for syncing
+      const saving = get().savings.find((s) => s.id === id);
+      const updated = { ...saving, ...changes, id };
       set((state) => ({
         savings: state.savings.map((s) => (s.id === id ? { ...s, ...changes } : s)),
       }));
       
-      // Sync to API in background
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('saving', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -1081,8 +1111,10 @@ export const useDataStore = create((set, get) => ({
       const updatedBalances = await openingBalancesDB.getAll();
       set({ openingBalances: updatedBalances });
       
-      // Sync to API in background
-      const updated = { id, ...changes };
+      // Get the full opening balance object to include mongoId for syncing
+      const balance = updatedBalances.find((b) => b.id === id);
+      const updated = { ...balance, ...changes, id };
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('openingBalance', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });
@@ -1139,13 +1171,10 @@ export const useDataStore = create((set, get) => ({
       const updatedExpectedIncome = await expectedIncomeDB.getAll();
       set({ expectedIncome: updatedExpectedIncome });
       
-      // Sync to API in background - preserve _id if it exists
-      const existingItem = updatedExpectedIncome.find(ei => ei.id === id);
-      const updated = { 
-        id, 
-        ...(existingItem?._id && { _id: existingItem._id }),
-        ...changes 
-      };
+      // Get the full expected income object to include mongoId for syncing
+      const expectedIncome = updatedExpectedIncome.find((ei) => ei.id === id);
+      const updated = { ...expectedIncome, ...changes, id };
+      // Sync to API in background (includes mongoId if available)
       get().syncToAPI('expectedIncome', 'update', updated).catch(() => {});
     } catch (error) {
       set({ error: error.message });

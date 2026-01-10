@@ -800,6 +800,12 @@ export const backupDB = {
       // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
       if (transformed._id) {
         // MongoDB _id can be ObjectId or string
+        // Store MongoDB _id as mongoId for syncing updates back to server
+        const mongoId = typeof transformed._id === 'object' 
+          ? transformed._id.toString() 
+          : transformed._id.toString();
+        transformed.mongoId = mongoId;
+        
         // For IndexedDB with ++id, we'll let it auto-generate, so remove the id
         // But keep it for backup files that have numeric IDs
         if (typeof transformed._id === 'number') {
