@@ -975,7 +975,7 @@ export const backupDB = {
       
 
       // Helper function to import with put operations (updates existing or creates new)
-      // Check each record individually to prevent duplicates with ++id auto-increment
+      // Use mongoId to check for duplicates since ++id auto-increment doesn't work well with explicit IDs
       const importWithPut = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
@@ -986,37 +986,78 @@ export const backupDB = {
         let count = 0;
         let updated = 0;
         let created = 0;
+        let skipped = 0;
         let errorCount = 0;
+        
+        // Get all existing records to check for duplicates
+        const existingRecords = await store.toArray();
+        const existingMap = new Map();
+        
+        // Index existing records by mongoId (if available) or by a unique combination
+        existingRecords.forEach(record => {
+          if (record.mongoId) {
+            existingMap.set(record.mongoId, record);
+          } else if (record.id) {
+            // Fallback: use id if no mongoId
+            existingMap.set(`id_${record.id}`, record);
+          }
+        });
         
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           try {
-            // Check if record exists by ID
-            if (item.id !== undefined && item.id !== null) {
-              const existing = await store.get(item.id);
-              if (existing) {
-                // Update existing record
-                await store.put(item);
-                updated++;
-              } else {
-                // Create new record with explicit ID
-                await store.put(item);
-                created++;
+            let existing = null;
+            let existingKey = null;
+            
+            // Check by mongoId first (most reliable)
+            if (item.mongoId) {
+              existing = existingMap.get(item.mongoId);
+              existingKey = item.mongoId;
+            }
+            
+            // If not found by mongoId, check by numeric ID
+            if (!existing && item.id !== undefined && item.id !== null) {
+              existing = existingMap.get(`id_${item.id}`);
+              if (!existing) {
+                existing = await store.get(item.id);
               }
+            }
+            
+            if (existing) {
+              // Update existing record - remove id to let IndexedDB handle it, or use existing.id
+              const updateItem = { ...item };
+              // Keep the existing IndexedDB id to ensure we update the right record
+              updateItem.id = existing.id;
+              await store.put(updateItem);
+              updated++;
             } else {
-              // No ID provided, let IndexedDB auto-generate
-              await store.add(item);
+              // New record - remove id to let IndexedDB auto-generate, or use provided id
+              const newItem = { ...item };
+              // If we have a numeric id from hash, try to use it
+              // But with ++id, we should let it auto-generate to avoid conflicts
+              if (newItem.id !== undefined && newItem.id !== null) {
+                // Try to use the provided ID
+                try {
+                  await store.put(newItem);
+                } catch (putErr) {
+                  // If put fails (maybe ID conflict), remove ID and let auto-increment handle it
+                  delete newItem.id;
+                  await store.add(newItem);
+                }
+              } else {
+                await store.add(newItem);
+              }
               created++;
             }
             count++;
           } catch (err) {
             errorCount++;
-            console.error(`Error importing ${name} item ${i + 1} (ID: ${item.id}):`, err);
+            console.error(`Error importing ${name} item ${i + 1} (ID: ${item.id}, mongoId: ${item.mongoId}):`, err);
             // Continue with other items even if one fails
           }
         }
         
-        console.log(`${name}: Imported ${count}/${items.length} items (${created} created, ${updated} updated, ${errorCount} errors)`);
+        console.log(`${name}: Imported ${count}/${items.length} items (${created} created, ${updated} updated, ${skipped} skipped, ${errorCount} errors)`);
         return { count };
       };
       
