@@ -11,6 +11,7 @@ import SavingsTransaction from '../models/SavingsTransaction.js';
 import OpeningBalance from '../models/OpeningBalance.js';
 import ExpectedIncome from '../models/ExpectedIncome.js';
 import { getUserId } from '../middleware/auth.js';
+import mongoose from 'mongoose';
 
 export default async function migrationRoutes(fastify, options) {
   // Upload and import data
@@ -546,22 +547,69 @@ export default async function migrationRoutes(fastify, options) {
   // Delete all user data from MongoDB
   fastify.delete('/clear', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
-      const userId = getUserId(request);
+      const userIdRaw = getUserId(request);
+      
+      if (!userIdRaw) {
+        return reply.code(400).send({ error: 'User ID not found' });
+      }
+
+      // Convert userId to ObjectId if it's a string
+      const userId = mongoose.Types.ObjectId.isValid(userIdRaw) 
+        ? new mongoose.Types.ObjectId(userIdRaw)
+        : userIdRaw;
+
+      fastify.log.info(`Deleting all data for user: ${userId}`);
 
       // Delete all user data
       const deleteResults = await Promise.all([
-        Client.deleteMany({ userId }),
-        Income.deleteMany({ userId }),
-        Expense.deleteMany({ userId }),
-        Debt.deleteMany({ userId }),
-        Goal.deleteMany({ userId }),
-        Invoice.deleteMany({ userId }),
-        Todo.deleteMany({ userId }),
-        List.deleteMany({ userId }),
-        Saving.deleteMany({ userId }),
-        SavingsTransaction.deleteMany({ userId }),
-        OpeningBalance.deleteMany({ userId }),
-        ExpectedIncome.deleteMany({ userId }),
+        Client.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting clients:', err);
+          return { deletedCount: 0 };
+        }),
+        Income.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting income:', err);
+          return { deletedCount: 0 };
+        }),
+        Expense.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting expenses:', err);
+          return { deletedCount: 0 };
+        }),
+        Debt.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting debts:', err);
+          return { deletedCount: 0 };
+        }),
+        Goal.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting goals:', err);
+          return { deletedCount: 0 };
+        }),
+        Invoice.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting invoices:', err);
+          return { deletedCount: 0 };
+        }),
+        Todo.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting todos:', err);
+          return { deletedCount: 0 };
+        }),
+        List.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting lists:', err);
+          return { deletedCount: 0 };
+        }),
+        Saving.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting savings:', err);
+          return { deletedCount: 0 };
+        }),
+        SavingsTransaction.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting savings transactions:', err);
+          return { deletedCount: 0 };
+        }),
+        OpeningBalance.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting opening balances:', err);
+          return { deletedCount: 0 };
+        }),
+        ExpectedIncome.deleteMany({ userId }).catch(err => {
+          fastify.log.error('Error deleting expected income:', err);
+          return { deletedCount: 0 };
+        }),
       ]);
 
       const counts = {
@@ -581,6 +629,8 @@ export default async function migrationRoutes(fastify, options) {
 
       const totalDeleted = Object.values(counts).reduce((sum, count) => sum + count, 0);
 
+      fastify.log.info(`Deleted ${totalDeleted} items for user ${userId}`, counts);
+
       return {
         success: true,
         message: `Deleted ${totalDeleted} items from server`,
@@ -588,7 +638,7 @@ export default async function migrationRoutes(fastify, options) {
         totalDeleted,
       };
     } catch (error) {
-      fastify.log.error(error);
+      fastify.log.error('Error deleting user data:', error);
       return reply.code(500).send({ error: 'Failed to delete data', message: error.message });
     }
   });

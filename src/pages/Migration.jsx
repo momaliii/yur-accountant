@@ -174,10 +174,19 @@ export default function Migration() {
 
     try {
       const result = await migrationAPI.clearAll();
-      setSuccess(`Successfully deleted ${result.totalDeleted || 0} items from server.`);
-      await loadLocalDataStats();
+      if (result.success) {
+        setSuccess(`Successfully deleted ${result.totalDeleted || 0} items from server.`);
+        // Refresh page after deletion to ensure clean state
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        setError(result.error || 'Failed to delete server data');
+      }
     } catch (error) {
-      setError('Failed to delete server data: ' + (error.message || 'Unknown error'));
+      console.error('Delete server data error:', error);
+      const errorMessage = error.response?.data?.error || error.message || 'Unknown error';
+      setError('Failed to delete server data: ' + errorMessage);
     } finally {
       setIsDeletingServer(false);
     }
