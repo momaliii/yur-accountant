@@ -38,6 +38,14 @@ export async function initEmailService() {
   }
 }
 
+// Get frontend URL from environment variable
+const getFrontendUrl = () => {
+  return process.env.FRONTEND_URL || 
+         process.env.APP_URL || 
+         (process.env.VITE_API_URL ? process.env.VITE_API_URL.replace(/\/api\/?$/, '') : null) ||
+         'http://localhost:5173';
+};
+
 // Email templates
 const templates = {
   welcome: (data) => ({
@@ -48,7 +56,7 @@ const templates = {
         <p>Hi ${data.name || 'there'},</p>
         <p>Thank you for joining YUR Finance. We're excited to help you manage your finances.</p>
         <p>Get started by adding your first client or recording your income.</p>
-        <a href="${data.appUrl || process.env.APP_URL || process.env.FRONTEND_URL || 'http://localhost:5173'}" style="display: inline-block; padding: 10px 20px; background: #6366f1; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px;">Go to Dashboard</a>
+        <a href="${data.appUrl || getFrontendUrl()}" style="display: inline-block; padding: 10px 20px; background: #6366f1; color: white; text-decoration: none; border-radius: 5px; margin-top: 20px;">Go to Dashboard</a>
       </div>
     `,
   }),
