@@ -1000,7 +1000,7 @@ export const backupDB = {
       };
       
       // Helper function to import with put operations (updates existing or creates new)
-      // Use unique keys to detect duplicates since ++id auto-increment doesn't work well with explicit IDs
+      // Use unique keys to detect duplicates both in existing data and within the import batch
       const importWithPut = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
@@ -1026,8 +1026,29 @@ export const backupDB = {
           }
         });
         
-        for (let i = 0; i < items.length; i++) {
-          const item = items[i];
+        // Also track items we've processed in this batch to prevent duplicates within the batch
+        const batchMap = new Map();
+        
+        // First pass: remove duplicates within the batch itself
+        const uniqueItems = [];
+        const seenInBatch = new Set();
+        
+        for (const item of items) {
+          const uniqueKey = getUniqueKey(item, name);
+          if (!seenInBatch.has(uniqueKey)) {
+            seenInBatch.add(uniqueKey);
+            uniqueItems.push(item);
+          } else {
+            skipped++;
+            console.log(`${name}: Skipping duplicate in batch:`, uniqueKey);
+          }
+        }
+        
+        console.log(`${name}: Removed ${items.length - uniqueItems.length} duplicates from batch, processing ${uniqueItems.length} unique items`);
+        
+        // Second pass: import unique items
+        for (let i = 0; i < uniqueItems.length; i++) {
+          const item = uniqueItems[i];
           try {
             const uniqueKey = getUniqueKey(item, name);
             const existing = existingMap.get(uniqueKey);
@@ -1046,7 +1067,10 @@ export const backupDB = {
               // Remove id to let IndexedDB auto-increment handle it
               // This prevents conflicts with ++id
               delete newItem.id;
-              await store.add(newItem);
+              const newId = await store.add(newItem);
+              // Update the map with the new record
+              newItem.id = newId;
+              existingMap.set(uniqueKey, newItem);
               created++;
             }
             count++;
@@ -1057,7 +1081,7 @@ export const backupDB = {
           }
         }
         
-        console.log(`${name}: Imported ${count}/${items.length} items (${created} created, ${updated} updated, ${skipped} skipped, ${errorCount} errors)`);
+        console.log(`${name}: Imported ${count}/${uniqueItems.length} items (${created} created, ${updated} updated, ${skipped} skipped from batch, ${errorCount} errors)`);
         return { count };
       };
       
