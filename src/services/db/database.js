@@ -895,7 +895,7 @@ export const backupDB = {
       await db.expectedIncome.clear();
       
       // Import transformed data (order matters: lists first, then clients, then others)
-      // Use bulkPut to preserve IDs from backup files
+      // Use add() to let IndexedDB assign new IDs, then map old IDs to new IDs
       let importCounts = {
         lists: 0,
         clients: 0,
@@ -910,25 +910,46 @@ export const backupDB = {
         openingBalances: 0,
         expectedIncome: 0,
       };
+      
+      const idMaps = {
+        lists: {},
+        clients: {},
+        expenses: {},
+        savings: {},
+      };
 
-      // Helper function to import with individual put operations
-      // This ensures IDs are preserved even with ++id auto-increment
-      const importWithPut = async (store, items, name) => {
+      // Helper function to import with individual operations
+      // With ++id auto-increment, we need to use add() and let IndexedDB assign IDs
+      // Then we'll need to map old IDs to new IDs for relationships
+      const importWithAdd = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
-          return 0;
+          return { count: 0, idMap: {} };
         }
         console.log(`${name}: Starting import of ${items.length} items`);
         let count = 0;
         let errorCount = 0;
+        const idMap = {}; // Map old ID to new ID
+        
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
+          const oldId = item.id;
           try {
-            // Use put to explicitly set the ID (works with ++id)
-            await store.put(item);
+            // Remove the ID and let IndexedDB auto-generate it
+            const itemWithoutId = { ...item };
+            delete itemWithoutId.id;
+            
+            // Use add() to let IndexedDB assign a new auto-increment ID
+            const newId = await store.add(itemWithoutId);
+            
+            // Map old ID to new ID for relationship updates
+            if (oldId !== undefined && oldId !== null) {
+              idMap[oldId] = newId;
+            }
+            
             count++;
             if (i < 3) {
-              console.log(`${name}: Successfully imported item ${i + 1}:`, item.id, item);
+              console.log(`${name}: Successfully imported item ${i + 1}: old ID ${oldId} -> new ID ${newId}`);
             }
           } catch (err) {
             errorCount++;
@@ -937,13 +958,64 @@ export const backupDB = {
           }
         }
         console.log(`${name}: Imported ${count}/${items.length} items (${errorCount} errors)`);
-        return count;
+        return { count, idMap };
+      };
+      
+      // Helper function to update foreign key references using ID mapping
+      const updateReferences = async (store, items, name, idMaps) => {
+        if (!items || items.length === 0) return;
+        
+        console.log(`${name}: Updating references for ${items.length} items`);
+        let updated = 0;
+        
+        for (const item of items) {
+          try {
+            const updates = {};
+            let needsUpdate = false;
+            
+            // Update clientId if it exists in the clients map
+            if (item.clientId && idMaps.clients && idMaps.clients[item.clientId]) {
+              updates.clientId = idMaps.clients[item.clientId];
+              needsUpdate = true;
+            }
+            
+            // Update listId if it exists in the lists map
+            if (item.listId && idMaps.lists && idMaps.lists[item.listId]) {
+              updates.listId = idMaps.lists[item.listId];
+              needsUpdate = true;
+            }
+            
+            // Update savingsId if it exists in the savings map
+            if (item.savingsId && idMaps.savings && idMaps.savings[item.savingsId]) {
+              updates.savingsId = idMaps.savings[item.savingsId];
+              needsUpdate = true;
+            }
+            
+            // Update parentRecurringId if it exists in the expenses map
+            if (item.parentRecurringId && idMaps.expenses && idMaps.expenses[item.parentRecurringId]) {
+              updates.parentRecurringId = idMaps.expenses[item.parentRecurringId];
+              needsUpdate = true;
+            }
+            
+            if (needsUpdate) {
+              await store.update(item.id, updates);
+              updated++;
+            }
+          } catch (err) {
+            console.error(`Error updating ${name} references:`, item, err);
+          }
+        }
+        
+        console.log(`${name}: Updated ${updated} items with new references`);
       };
 
+      // Step 1: Import lists first (no dependencies)
       if (data.lists && data.lists.length > 0) {
         const transformedLists = transformArray(data.lists, 'lists');
         try {
-          importCounts.lists = await importWithPut(db.lists, transformedLists, 'lists');
+          const result = await importWithAdd(db.lists, transformedLists, 'lists');
+          importCounts.lists = result.count;
+          idMaps.lists = result.idMap;
           console.log(`Imported ${importCounts.lists} lists`);
         } catch (err) {
           console.error('Error importing lists:', err);
@@ -953,11 +1025,14 @@ export const backupDB = {
         console.log('No lists to import');
       }
       
+      // Step 2: Import clients (no dependencies)
       if (data.clients && data.clients.length > 0) {
         const transformedClients = transformArray(data.clients, 'clients');
         console.log('Sample client after transform:', transformedClients[0]);
         try {
-          importCounts.clients = await importWithPut(db.clients, transformedClients, 'clients');
+          const result = await importWithAdd(db.clients, transformedClients, 'clients');
+          importCounts.clients = result.count;
+          idMaps.clients = result.idMap;
           console.log(`Imported ${importCounts.clients} clients`);
         } catch (err) {
           console.error('Error importing clients:', err);
@@ -967,24 +1042,19 @@ export const backupDB = {
         console.log('No clients to import');
       }
       
-      if (data.income && data.income.length > 0) {
-        const transformedIncome = transformArray(data.income, 'income');
-        try {
-          importCounts.income = await importWithPut(db.income, transformedIncome, 'income');
-          console.log(`Imported ${importCounts.income} income records`);
-        } catch (err) {
-          console.error('Error importing income:', err);
-          throw new Error(`Failed to import income: ${err.message}`);
-        }
-      } else {
-        console.log('No income to import');
-      }
-      
+      // Step 3: Import expenses (may have parentRecurringId references)
       if (data.expenses && data.expenses.length > 0) {
         const transformedExpenses = transformArray(data.expenses, 'expenses');
         try {
-          importCounts.expenses = await importWithPut(db.expenses, transformedExpenses, 'expenses');
+          const result = await importWithAdd(db.expenses, transformedExpenses, 'expenses');
+          importCounts.expenses = result.count;
+          idMaps.expenses = result.idMap;
           console.log(`Imported ${importCounts.expenses} expenses`);
+          
+          // Update parentRecurringId references after all expenses are imported
+          // We need to get the newly imported expenses with their new IDs
+          const allExpenses = await db.expenses.toArray();
+          await updateReferences(db.expenses, allExpenses, 'expenses', idMaps);
         } catch (err) {
           console.error('Error importing expenses:', err);
           throw new Error(`Failed to import expenses: ${err.message}`);
@@ -993,10 +1063,31 @@ export const backupDB = {
         console.log('No expenses to import');
       }
       
+      // Step 4: Import income (depends on clients)
+      if (data.income && data.income.length > 0) {
+        const transformedIncome = transformArray(data.income, 'income');
+        try {
+          const result = await importWithAdd(db.income, transformedIncome, 'income');
+          importCounts.income = result.count;
+          console.log(`Imported ${importCounts.income} income records`);
+          
+          // Update clientId references
+          const allIncome = await db.income.toArray();
+          await updateReferences(db.income, allIncome, 'income', idMaps);
+        } catch (err) {
+          console.error('Error importing income:', err);
+          throw new Error(`Failed to import income: ${err.message}`);
+        }
+      } else {
+        console.log('No income to import');
+      }
+      
+      // Step 5: Import other independent collections
       if (data.debts && data.debts.length > 0) {
         const transformedDebts = transformArray(data.debts, 'debts');
         try {
-          importCounts.debts = await importWithPut(db.debts, transformedDebts, 'debts');
+          const result = await importWithAdd(db.debts, transformedDebts, 'debts');
+          importCounts.debts = result.count;
           console.log(`Imported ${importCounts.debts} debts`);
         } catch (err) {
           console.error('Error importing debts:', err);
@@ -1009,7 +1100,8 @@ export const backupDB = {
       if (data.goals && data.goals.length > 0) {
         const transformedGoals = transformArray(data.goals, 'goals');
         try {
-          importCounts.goals = await importWithPut(db.goals, transformedGoals, 'goals');
+          const result = await importWithAdd(db.goals, transformedGoals, 'goals');
+          importCounts.goals = result.count;
           console.log(`Imported ${importCounts.goals} goals`);
         } catch (err) {
           console.error('Error importing goals:', err);
@@ -1022,7 +1114,8 @@ export const backupDB = {
       if (data.invoices && data.invoices.length > 0) {
         const transformedInvoices = transformArray(data.invoices, 'invoices');
         try {
-          importCounts.invoices = await importWithPut(db.invoices, transformedInvoices, 'invoices');
+          const result = await importWithAdd(db.invoices, transformedInvoices, 'invoices');
+          importCounts.invoices = result.count;
           console.log(`Imported ${importCounts.invoices} invoices`);
         } catch (err) {
           console.error('Error importing invoices:', err);
@@ -1035,8 +1128,13 @@ export const backupDB = {
       if (data.todos && data.todos.length > 0) {
         const transformedTodos = transformArray(data.todos, 'todos');
         try {
-          importCounts.todos = await importWithPut(db.todos, transformedTodos, 'todos');
+          const result = await importWithAdd(db.todos, transformedTodos, 'todos');
+          importCounts.todos = result.count;
           console.log(`Imported ${importCounts.todos} todos`);
+          
+          // Update listId references
+          const allTodos = await db.todos.toArray();
+          await updateReferences(db.todos, allTodos, 'todos', idMaps);
         } catch (err) {
           console.error('Error importing todos:', err);
           throw new Error(`Failed to import todos: ${err.message}`);
@@ -1048,7 +1146,9 @@ export const backupDB = {
       if (data.savings && data.savings.length > 0) {
         const transformedSavings = transformArray(data.savings, 'savings');
         try {
-          importCounts.savings = await importWithPut(db.savings, transformedSavings, 'savings');
+          const result = await importWithAdd(db.savings, transformedSavings, 'savings');
+          importCounts.savings = result.count;
+          idMaps.savings = result.idMap;
           console.log(`Imported ${importCounts.savings} savings`);
         } catch (err) {
           console.error('Error importing savings:', err);
@@ -1061,8 +1161,13 @@ export const backupDB = {
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
         const transformedSavingsTransactions = transformArray(data.savingsTransactions, 'savingsTransactions');
         try {
-          importCounts.savingsTransactions = await importWithPut(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
+          const result = await importWithAdd(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
+          importCounts.savingsTransactions = result.count;
           console.log(`Imported ${importCounts.savingsTransactions} savings transactions`);
+          
+          // Update savingsId references
+          const allSavingsTransactions = await db.savingsTransactions.toArray();
+          await updateReferences(db.savingsTransactions, allSavingsTransactions, 'savingsTransactions', idMaps);
         } catch (err) {
           console.error('Error importing savings transactions:', err);
           throw new Error(`Failed to import savings transactions: ${err.message}`);
@@ -1074,7 +1179,8 @@ export const backupDB = {
       if (data.openingBalances && data.openingBalances.length > 0) {
         const transformedOpeningBalances = transformArray(data.openingBalances, 'openingBalances');
         try {
-          importCounts.openingBalances = await importWithPut(db.openingBalances, transformedOpeningBalances, 'openingBalances');
+          const result = await importWithAdd(db.openingBalances, transformedOpeningBalances, 'openingBalances');
+          importCounts.openingBalances = result.count;
           console.log(`Imported ${importCounts.openingBalances} opening balances`);
         } catch (err) {
           console.error('Error importing opening balances:', err);
@@ -1087,8 +1193,13 @@ export const backupDB = {
       if (data.expectedIncome && data.expectedIncome.length > 0) {
         const transformedExpectedIncome = transformArray(data.expectedIncome, 'expectedIncome');
         try {
-          importCounts.expectedIncome = await importWithPut(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
+          const result = await importWithAdd(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
+          importCounts.expectedIncome = result.count;
           console.log(`Imported ${importCounts.expectedIncome} expected income records`);
+          
+          // Update clientId references
+          const allExpectedIncome = await db.expectedIncome.toArray();
+          await updateReferences(db.expectedIncome, allExpectedIncome, 'expectedIncome', idMaps);
         } catch (err) {
           console.error('Error importing expected income:', err);
           throw new Error(`Failed to import expected income: ${err.message}`);
