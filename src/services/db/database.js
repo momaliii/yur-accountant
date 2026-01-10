@@ -974,8 +974,33 @@ export const backupDB = {
       };
       
 
+      // Helper function to create a unique key for duplicate detection
+      const getUniqueKey = (item, name) => {
+        // Use mongoId if available (most reliable)
+        if (item.mongoId) return `mongo_${item.mongoId}`;
+        
+        // Create unique key based on item type
+        switch (name) {
+          case 'income':
+            // Income: clientId + amount + receivedDate + paymentMethod
+            return `income_${item.clientId || 'null'}_${item.amount}_${item.receivedDate}_${item.paymentMethod || 'null'}`;
+          case 'expenses':
+            // Expenses: amount + date + category + description
+            return `expense_${item.amount}_${item.date}_${item.category}_${item.description || 'null'}`;
+          case 'clients':
+            // Clients: name + email (or just name if email is empty)
+            return `client_${item.name}_${item.email || 'noemail'}`;
+          case 'debts':
+            // Debts: partyName + amount + dueDate
+            return `debt_${item.partyName}_${item.amount}_${item.dueDate || 'null'}`;
+          default:
+            // Fallback: use id if available
+            return item.id ? `id_${item.id}` : `item_${JSON.stringify(item).substring(0, 100)}`;
+        }
+      };
+      
       // Helper function to import with put operations (updates existing or creates new)
-      // Use mongoId to check for duplicates since ++id auto-increment doesn't work well with explicit IDs
+      // Use unique keys to detect duplicates since ++id auto-increment doesn't work well with explicit IDs
       const importWithPut = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
@@ -993,66 +1018,41 @@ export const backupDB = {
         const existingRecords = await store.toArray();
         const existingMap = new Map();
         
-        // Index existing records by mongoId (if available) or by a unique combination
+        // Index existing records by unique key
         existingRecords.forEach(record => {
-          if (record.mongoId) {
-            existingMap.set(record.mongoId, record);
-          } else if (record.id) {
-            // Fallback: use id if no mongoId
-            existingMap.set(`id_${record.id}`, record);
+          const key = getUniqueKey(record, name);
+          if (!existingMap.has(key)) {
+            existingMap.set(key, record);
           }
         });
         
         for (let i = 0; i < items.length; i++) {
           const item = items[i];
           try {
-            let existing = null;
-            let existingKey = null;
-            
-            // Check by mongoId first (most reliable)
-            if (item.mongoId) {
-              existing = existingMap.get(item.mongoId);
-              existingKey = item.mongoId;
-            }
-            
-            // If not found by mongoId, check by numeric ID
-            if (!existing && item.id !== undefined && item.id !== null) {
-              existing = existingMap.get(`id_${item.id}`);
-              if (!existing) {
-                existing = await store.get(item.id);
-              }
-            }
+            const uniqueKey = getUniqueKey(item, name);
+            const existing = existingMap.get(uniqueKey);
             
             if (existing) {
-              // Update existing record - remove id to let IndexedDB handle it, or use existing.id
+              // Update existing record - use existing IndexedDB id
               const updateItem = { ...item };
-              // Keep the existing IndexedDB id to ensure we update the right record
-              updateItem.id = existing.id;
+              updateItem.id = existing.id; // Use existing IndexedDB id
               await store.put(updateItem);
               updated++;
+              // Update the map so we don't match this record again
+              existingMap.set(uniqueKey, updateItem);
             } else {
-              // New record - remove id to let IndexedDB auto-generate, or use provided id
+              // New record - let IndexedDB auto-generate ID
               const newItem = { ...item };
-              // If we have a numeric id from hash, try to use it
-              // But with ++id, we should let it auto-generate to avoid conflicts
-              if (newItem.id !== undefined && newItem.id !== null) {
-                // Try to use the provided ID
-                try {
-                  await store.put(newItem);
-                } catch (putErr) {
-                  // If put fails (maybe ID conflict), remove ID and let auto-increment handle it
-                  delete newItem.id;
-                  await store.add(newItem);
-                }
-              } else {
-                await store.add(newItem);
-              }
+              // Remove id to let IndexedDB auto-increment handle it
+              // This prevents conflicts with ++id
+              delete newItem.id;
+              await store.add(newItem);
               created++;
             }
             count++;
           } catch (err) {
             errorCount++;
-            console.error(`Error importing ${name} item ${i + 1} (ID: ${item.id}, mongoId: ${item.mongoId}):`, err);
+            console.error(`Error importing ${name} item ${i + 1}:`, err, item);
             // Continue with other items even if one fails
           }
         }
