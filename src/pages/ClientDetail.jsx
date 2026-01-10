@@ -278,7 +278,11 @@ export default function ClientDetail() {
       <div className="p-4 sm:p-6">
         <Card>
           <div className="text-center py-8">
-            <p className="text-slate-400 mb-4">Client not found</p>
+            <p className="text-slate-400 mb-4">
+              {id === ':id' || !id 
+                ? 'Invalid client ID' 
+                : `Client not found (ID: ${id})`}
+            </p>
             <Button onClick={() => navigate('/app/clients')}>Back to Clients</Button>
           </div>
         </Card>
@@ -293,7 +297,7 @@ export default function ClientDetail() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div className="flex items-center gap-4">
-          <Link to="/clients">
+          <Link to="/app/clients">
             <Button variant="secondary" className="flex items-center gap-2">
               <ArrowLeft size={18} />
               <span className="hidden sm:inline">Back</span>
