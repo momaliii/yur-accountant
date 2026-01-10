@@ -80,30 +80,66 @@ export default async function migrationRoutes(fastify, options) {
         }
       }
 
-      // Import Clients
+      // Import Clients - check for existing records first to prevent duplicates
       if (data.clients && Array.isArray(data.clients)) {
         for (const client of data.clients) {
           try {
-            const newClient = new Client({
-              userId,
-              name: client.name || 'Unnamed Client',
-              email: client.email,
-              phone: client.phone,
-              paymentModel: client.paymentModel || 'fixed',
-              fixedAmount: client.fixedAmount,
-              adSpendPercentage: client.adSpendPercentage,
-              subcontractorCost: client.subcontractorCost,
-              currency: client.currency || 'EGP',
-              services: client.services || [],
-              notes: client.notes,
-              rating: client.rating || 3,
-              riskLevel: client.riskLevel || 'medium',
-              status: client.status || 'active',
-              createdAt: client.createdAt ? new Date(client.createdAt) : new Date(),
-            });
-            await newClient.save();
-            if (client.id) idMapping.clients[client.id] = newClient._id;
-            results.clients.imported++;
+            // Check if client already exists by name and email (or just name if email is empty)
+            let existingClient = null;
+            if (client.email && client.email.trim()) {
+              existingClient = await Client.findOne({ 
+                userId, 
+                name: client.name,
+                email: client.email 
+              });
+            } else {
+              existingClient = await Client.findOne({ 
+                userId, 
+                name: client.name,
+                $or: [{ email: '' }, { email: { $exists: false } }, { email: null }]
+              });
+            }
+            
+            if (existingClient) {
+              // Update existing client
+              existingClient.email = client.email || existingClient.email;
+              existingClient.phone = client.phone || existingClient.phone;
+              existingClient.paymentModel = client.paymentModel || existingClient.paymentModel;
+              existingClient.fixedAmount = client.fixedAmount;
+              existingClient.adSpendPercentage = client.adSpendPercentage;
+              existingClient.subcontractorCost = client.subcontractorCost;
+              existingClient.currency = client.currency || existingClient.currency;
+              existingClient.services = client.services || existingClient.services;
+              existingClient.notes = client.notes || existingClient.notes;
+              existingClient.rating = client.rating !== undefined ? client.rating : existingClient.rating;
+              existingClient.riskLevel = client.riskLevel || existingClient.riskLevel;
+              existingClient.status = client.status || existingClient.status;
+              await existingClient.save();
+              if (client.id) idMapping.clients[client.id] = existingClient._id;
+              results.clients.imported++;
+            } else {
+              // Create new client
+              const newClient = new Client({
+                userId,
+                name: client.name || 'Unnamed Client',
+                email: client.email,
+                phone: client.phone,
+                paymentModel: client.paymentModel || 'fixed',
+                fixedAmount: client.fixedAmount,
+                adSpendPercentage: client.adSpendPercentage,
+                subcontractorCost: client.subcontractorCost,
+                currency: client.currency || 'EGP',
+                services: client.services || [],
+                notes: client.notes,
+                rating: client.rating || 3,
+                riskLevel: client.riskLevel || 'medium',
+                status: client.status || 'active',
+                createdAt: client.createdAt ? new Date(client.createdAt) : new Date(),
+              });
+              await newClient.save();
+              if (client.id) idMapping.clients[client.id] = newClient._id;
+              results.clients.imported++;
+            }
           } catch (error) {
             results.clients.errors.push({ id: client.id, error: error.message });
           }
@@ -137,27 +173,59 @@ export default async function migrationRoutes(fastify, options) {
             const rawPaymentMethod = income.paymentMethod?.toString().trim().toLowerCase() || '';
             const paymentMethod = paymentMethodMap[rawPaymentMethod] || 'cash';
 
-            const newIncome = new Income({
+            const receivedDate = income.receivedDate ? new Date(income.receivedDate) : new Date();
+            
+            // Check if income already exists (same clientId, amount, receivedDate, paymentMethod)
+            const existingIncome = await Income.findOne({
               userId,
-              clientId,
+              clientId: clientId || null,
               amount: income.amount || 0,
-              currency: income.currency || 'EGP',
-              paymentMethod,
-              receivedDate: income.receivedDate ? new Date(income.receivedDate) : new Date(),
-              isDeposit: income.isDeposit || false,
-              isFixedPortionOnly: income.isFixedPortionOnly || false,
-              taxCategory: income.taxCategory,
-              isTaxable: income.isTaxable !== undefined ? income.isTaxable : true,
-              taxRate: income.taxRate,
-              netAmount: income.netAmount,
-              fee: income.fee,
-              adSpend: income.adSpend,
-              projectName: income.projectName,
-              notes: income.notes,
-              createdAt: income.createdAt ? new Date(income.createdAt) : new Date(),
+              receivedDate: {
+                $gte: new Date(receivedDate.getFullYear(), receivedDate.getMonth(), receivedDate.getDate()),
+                $lt: new Date(receivedDate.getFullYear(), receivedDate.getMonth(), receivedDate.getDate() + 1)
+              },
+              paymentMethod
             });
-            await newIncome.save();
-            results.income.imported++;
+            
+            if (existingIncome) {
+              // Update existing income
+              existingIncome.currency = income.currency || existingIncome.currency;
+              existingIncome.feePercentage = income.feePercentage !== undefined ? income.feePercentage : existingIncome.feePercentage;
+              existingIncome.netAmount = income.netAmount !== undefined ? income.netAmount : existingIncome.netAmount;
+              existingIncome.isDeposit = income.isDeposit !== undefined ? income.isDeposit : existingIncome.isDeposit;
+              existingIncome.isFixedPortionOnly = income.isFixedPortionOnly !== undefined ? income.isFixedPortionOnly : existingIncome.isFixedPortionOnly;
+              existingIncome.taxCategory = income.taxCategory !== undefined ? income.taxCategory : existingIncome.taxCategory;
+              existingIncome.isTaxable = income.isTaxable !== undefined ? income.isTaxable : existingIncome.isTaxable;
+              existingIncome.taxRate = income.taxRate !== undefined ? income.taxRate : existingIncome.taxRate;
+              existingIncome.adSpend = income.adSpend !== undefined ? income.adSpend : existingIncome.adSpend;
+              existingIncome.projectName = income.projectName || existingIncome.projectName;
+              existingIncome.notes = income.notes || existingIncome.notes;
+              await existingIncome.save();
+              results.income.imported++;
+            } else {
+              // Create new income
+              const newIncome = new Income({
+                userId,
+                clientId,
+                amount: income.amount || 0,
+                currency: income.currency || 'EGP',
+                paymentMethod,
+                receivedDate,
+                isDeposit: income.isDeposit || false,
+                isFixedPortionOnly: income.isFixedPortionOnly || false,
+                taxCategory: income.taxCategory,
+                isTaxable: income.isTaxable !== undefined ? income.isTaxable : true,
+                taxRate: income.taxRate,
+                netAmount: income.netAmount,
+                fee: income.fee,
+                adSpend: income.adSpend,
+                projectName: income.projectName,
+                notes: income.notes,
+                createdAt: income.createdAt ? new Date(income.createdAt) : new Date(),
+              });
+              await newIncome.save();
+              results.income.imported++;
+            }
           } catch (error) {
             results.income.errors.push({ id: income.id, error: error.message });
           }
@@ -188,30 +256,65 @@ export default async function migrationRoutes(fastify, options) {
               }
             }
 
-            const newExpense = new Expense({
+            const expenseDate = expense.date ? new Date(expense.date) : new Date();
+            
+            // Check if expense already exists (same amount, date, category, description)
+            const existingExpense = await Expense.findOne({
               userId,
-              clientId,
               amount: expense.amount || 0,
-              currency: expense.currency || 'EGP',
+              date: {
+                $gte: new Date(expenseDate.getFullYear(), expenseDate.getMonth(), expenseDate.getDate()),
+                $lt: new Date(expenseDate.getFullYear(), expenseDate.getMonth(), expenseDate.getDate() + 1)
+              },
               category: expense.category || 'other',
-              date: expense.date ? new Date(expense.date) : new Date(),
-              description: expense.description,
-              isRecurring: expense.isRecurring || false,
-              parentRecurringId,
-              taxCategory: expense.taxCategory,
-              isTaxDeductible: expense.isTaxDeductible || false,
-              taxRate: expense.taxRate,
-              notes: expense.notes,
-              createdAt: expense.createdAt ? new Date(expense.createdAt) : new Date(),
+              description: expense.description || ''
             });
-            await newExpense.save();
             
-            // Store mapping for parentRecurringId resolution
-            if (expense.id) {
-              expenseIdMapping[expense.id] = newExpense._id;
+            if (existingExpense) {
+              // Update existing expense
+              existingExpense.clientId = clientId !== undefined ? clientId : existingExpense.clientId;
+              existingExpense.currency = expense.currency || existingExpense.currency;
+              existingExpense.isRecurring = expense.isRecurring !== undefined ? expense.isRecurring : existingExpense.isRecurring;
+              existingExpense.parentRecurringId = parentRecurringId !== undefined ? parentRecurringId : existingExpense.parentRecurringId;
+              existingExpense.taxCategory = expense.taxCategory !== undefined ? expense.taxCategory : existingExpense.taxCategory;
+              existingExpense.isTaxDeductible = expense.isTaxDeductible !== undefined ? expense.isTaxDeductible : existingExpense.isTaxDeductible;
+              existingExpense.taxRate = expense.taxRate !== undefined ? expense.taxRate : existingExpense.taxRate;
+              existingExpense.notes = expense.notes || existingExpense.notes;
+              await existingExpense.save();
+              
+              // Store mapping for parentRecurringId resolution
+              if (expense.id) {
+                expenseIdMapping[expense.id] = existingExpense._id;
+              }
+              
+              results.expenses.imported++;
+            } else {
+              // Create new expense
+              const newExpense = new Expense({
+                userId,
+                clientId,
+                amount: expense.amount || 0,
+                currency: expense.currency || 'EGP',
+                category: expense.category || 'other',
+                date: expenseDate,
+                description: expense.description,
+                isRecurring: expense.isRecurring || false,
+                parentRecurringId,
+                taxCategory: expense.taxCategory,
+                isTaxDeductible: expense.isTaxDeductible || false,
+                taxRate: expense.taxRate,
+                notes: expense.notes,
+                createdAt: expense.createdAt ? new Date(expense.createdAt) : new Date(),
+              });
+              await newExpense.save();
+              
+              // Store mapping for parentRecurringId resolution
+              if (expense.id) {
+                expenseIdMapping[expense.id] = newExpense._id;
+              }
+              
+              results.expenses.imported++;
             }
-            
-            results.expenses.imported++;
           } catch (error) {
             results.expenses.errors.push({ id: expense.id, error: error.message });
           }
