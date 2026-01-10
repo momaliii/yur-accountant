@@ -900,6 +900,24 @@ export const backupDB = {
       }
     });
   },
+  
+  // Clear all data from IndexedDB
+  async clearAll() {
+    await db.transaction('rw', db.clients, db.income, db.expenses, db.debts, db.goals, db.invoices, db.todos, db.lists, db.savings, db.savingsTransactions, db.openingBalances, db.expectedIncome, async () => {
+      await db.clients.clear();
+      await db.income.clear();
+      await db.expenses.clear();
+      await db.debts.clear();
+      await db.goals.clear();
+      await db.invoices.clear();
+      await db.todos.clear();
+      await db.lists.clear();
+      await db.savings.clear();
+      await db.savingsTransactions.clear();
+      await db.openingBalances.clear();
+      await db.expectedIncome.clear();
+    });
+  },
 };
 
 export default db;
