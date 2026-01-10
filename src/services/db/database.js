@@ -783,65 +783,31 @@ export const backupDB = {
       throw new Error('No data to import: all arrays are empty or missing');
     }
     
-    // Helper function to create a numeric ID from MongoDB _id or string
-    // We need consistent numeric IDs for bulkPut to work with ++id
-    const createNumericId = (id) => {
-      if (id === null || id === undefined) return undefined;
-      
-      // If it's already a number, use it
-      if (typeof id === 'number') return id;
-      
-      // If it's a numeric string, convert to number
-      if (typeof id === 'string' && !isNaN(Number(id)) && id.trim() !== '') {
-        return Number(id);
-      }
-      
-      // For MongoDB ObjectId strings, create a hash-based numeric ID
-      // This ensures the same MongoDB _id always maps to the same IndexedDB id
-      if (typeof id === 'string') {
-        // Simple hash function to convert string to number
-        let hash = 0;
-        for (let i = 0; i < id.length; i++) {
-          const char = id.charCodeAt(i);
-          hash = ((hash << 5) - hash) + char;
-          hash = hash & hash; // Convert to 32bit integer
-        }
-        // Make it positive and ensure it's within safe integer range
-        return Math.abs(hash) % 2147483647; // Max safe integer for IndexedDB
-      }
-      
-      // If it's an object (MongoDB ObjectId), convert to string first
-      if (typeof id === 'object' && id.toString) {
-        return createNumericId(id.toString());
-      }
-      
-      return undefined;
-    };
-    
     // Helper function to transform document to IndexedDB format
     // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
     const transformDoc = (doc) => {
       if (!doc) return doc;
       const transformed = { ...doc };
       
-      // Store original MongoDB _id for reference
-      let mongoId = null;
-      if (transformed._id) {
-        mongoId = typeof transformed._id === 'object' 
-          ? transformed._id.toString() 
-          : transformed._id;
-        delete transformed._id;
-      }
-      
       // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
-      // Use numeric ID for IndexedDB compatibility with ++id
-      if (mongoId) {
-        transformed.id = createNumericId(mongoId);
-        // Store original MongoDB _id as mongoId for reference
-        transformed.mongoId = mongoId;
+      if (transformed._id) {
+        // MongoDB _id can be ObjectId or string
+        // For IndexedDB with ++id, we'll let it auto-generate, so remove the id
+        // But keep it for backup files that have numeric IDs
+        if (typeof transformed._id === 'number') {
+          // Numeric ID from backup file - keep it
+          transformed.id = transformed._id;
+        } else {
+          // MongoDB ObjectId or string - remove id to let IndexedDB auto-generate
+          delete transformed.id;
+        }
+        delete transformed._id;
       } else if (transformed.id !== undefined) {
         // If id already exists (from backup), ensure it's a number
-        transformed.id = createNumericId(transformed.id);
+        if (typeof transformed.id === 'string' && !isNaN(Number(transformed.id))) {
+          transformed.id = Number(transformed.id);
+        }
+        // If it's already a number, keep it as is
       }
       
       // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
@@ -974,12 +940,9 @@ export const backupDB = {
       };
       
 
-      // Helper function to create a unique key for duplicate detection
+      // Helper function to create a unique key for duplicate detection within batch
       const getUniqueKey = (item, name) => {
-        // Use mongoId if available (most reliable)
-        if (item.mongoId) return `mongo_${item.mongoId}`;
-        
-        // Create unique key based on item type
+        // Create unique key based on item type using data fields only
         switch (name) {
           case 'income':
             // Income: clientId + amount + receivedDate + paymentMethod
@@ -993,45 +956,36 @@ export const backupDB = {
           case 'debts':
             // Debts: partyName + amount + dueDate
             return `debt_${item.partyName}_${item.amount}_${item.dueDate || 'null'}`;
+          case 'goals':
+            // Goals: type + period + periodValue
+            return `goal_${item.type}_${item.period}_${item.periodValue || 'null'}`;
+          case 'lists':
+            // Lists: name
+            return `list_${item.name}`;
+          case 'savings':
+            // Savings: name + type
+            return `saving_${item.name}_${item.type}`;
           default:
-            // Fallback: use id if available
+            // Fallback: use id if available, otherwise use JSON string
             return item.id ? `id_${item.id}` : `item_${JSON.stringify(item).substring(0, 100)}`;
         }
       };
       
       // Helper function to import with put operations (updates existing or creates new)
       // Use unique keys to detect duplicates both in existing data and within the import batch
-      const importWithPut = async (store, items, name) => {
+      // Helper function to import with add operations (clean slate - no existence checks)
+      // Only remove duplicates within the import batch itself
+      const importWithAdd = async (store, items, name) => {
         if (!items || items.length === 0) {
           console.log(`${name}: No items to import`);
           return { count: 0 };
         }
         console.log(`${name}: Starting import of ${items.length} items`);
         
-        let count = 0;
-        let updated = 0;
-        let created = 0;
-        let skipped = 0;
-        let errorCount = 0;
-        
-        // Get all existing records to check for duplicates
-        const existingRecords = await store.toArray();
-        const existingMap = new Map();
-        
-        // Index existing records by unique key
-        existingRecords.forEach(record => {
-          const key = getUniqueKey(record, name);
-          if (!existingMap.has(key)) {
-            existingMap.set(key, record);
-          }
-        });
-        
-        // Also track items we've processed in this batch to prevent duplicates within the batch
-        const batchMap = new Map();
-        
-        // First pass: remove duplicates within the batch itself
+        // Remove duplicates within the batch itself
         const uniqueItems = [];
         const seenInBatch = new Set();
+        let skipped = 0;
         
         for (const item of items) {
           const uniqueKey = getUniqueKey(item, name);
@@ -1046,33 +1000,18 @@ export const backupDB = {
         
         console.log(`${name}: Removed ${items.length - uniqueItems.length} duplicates from batch, processing ${uniqueItems.length} unique items`);
         
-        // Second pass: import unique items
+        // Import unique items - let IndexedDB auto-generate IDs
+        let count = 0;
+        let errorCount = 0;
+        
         for (let i = 0; i < uniqueItems.length; i++) {
           const item = uniqueItems[i];
           try {
-            const uniqueKey = getUniqueKey(item, name);
-            const existing = existingMap.get(uniqueKey);
-            
-            if (existing) {
-              // Update existing record - use existing IndexedDB id
-              const updateItem = { ...item };
-              updateItem.id = existing.id; // Use existing IndexedDB id
-              await store.put(updateItem);
-              updated++;
-              // Update the map so we don't match this record again
-              existingMap.set(uniqueKey, updateItem);
-            } else {
-              // New record - let IndexedDB auto-generate ID
-              const newItem = { ...item };
-              // Remove id to let IndexedDB auto-increment handle it
-              // This prevents conflicts with ++id
-              delete newItem.id;
-              const newId = await store.add(newItem);
-              // Update the map with the new record
-              newItem.id = newId;
-              existingMap.set(uniqueKey, newItem);
-              created++;
-            }
+            // Remove id to let IndexedDB auto-increment handle it
+            // This prevents conflicts with ++id
+            const newItem = { ...item };
+            delete newItem.id;
+            await store.add(newItem);
             count++;
           } catch (err) {
             errorCount++;
@@ -1081,7 +1020,7 @@ export const backupDB = {
           }
         }
         
-        console.log(`${name}: Imported ${count}/${uniqueItems.length} items (${created} created, ${updated} updated, ${skipped} skipped from batch, ${errorCount} errors)`);
+        console.log(`${name}: Imported ${count}/${uniqueItems.length} items (${skipped} skipped from batch, ${errorCount} errors)`);
         return { count };
       };
       
@@ -1137,7 +1076,7 @@ export const backupDB = {
       if (data.lists && data.lists.length > 0) {
         const transformedLists = transformArray(data.lists, 'lists');
         try {
-          const result = await importWithPut(db.lists, transformedLists, 'lists');
+          const result = await importWithAdd(db.lists, transformedLists, 'lists');
           importCounts.lists = result.count;
           console.log(`Imported ${importCounts.lists} lists`);
         } catch (err) {
@@ -1153,7 +1092,7 @@ export const backupDB = {
         const transformedClients = transformArray(data.clients, 'clients');
         console.log('Sample client after transform:', transformedClients[0]);
         try {
-          const result = await importWithPut(db.clients, transformedClients, 'clients');
+          const result = await importWithAdd(db.clients, transformedClients, 'clients');
           importCounts.clients = result.count;
           console.log(`Imported ${importCounts.clients} clients`);
         } catch (err) {
@@ -1168,7 +1107,7 @@ export const backupDB = {
       if (data.expenses && data.expenses.length > 0) {
         const transformedExpenses = transformArray(data.expenses, 'expenses');
         try {
-          const result = await importWithPut(db.expenses, transformedExpenses, 'expenses');
+          const result = await importWithAdd(db.expenses, transformedExpenses, 'expenses');
           importCounts.expenses = result.count;
           console.log(`Imported ${importCounts.expenses} expenses`);
         } catch (err) {
@@ -1183,7 +1122,7 @@ export const backupDB = {
       if (data.income && data.income.length > 0) {
         const transformedIncome = transformArray(data.income, 'income');
         try {
-          const result = await importWithPut(db.income, transformedIncome, 'income');
+          const result = await importWithAdd(db.income, transformedIncome, 'income');
           importCounts.income = result.count;
           console.log(`Imported ${importCounts.income} income records`);
         } catch (err) {
@@ -1198,7 +1137,7 @@ export const backupDB = {
       if (data.debts && data.debts.length > 0) {
         const transformedDebts = transformArray(data.debts, 'debts');
         try {
-          const result = await importWithPut(db.debts, transformedDebts, 'debts');
+          const result = await importWithAdd(db.debts, transformedDebts, 'debts');
           importCounts.debts = result.count;
           console.log(`Imported ${importCounts.debts} debts`);
         } catch (err) {
@@ -1212,7 +1151,7 @@ export const backupDB = {
       if (data.goals && data.goals.length > 0) {
         const transformedGoals = transformArray(data.goals, 'goals');
         try {
-          const result = await importWithPut(db.goals, transformedGoals, 'goals');
+          const result = await importWithAdd(db.goals, transformedGoals, 'goals');
           importCounts.goals = result.count;
           console.log(`Imported ${importCounts.goals} goals`);
         } catch (err) {
@@ -1226,7 +1165,7 @@ export const backupDB = {
       if (data.invoices && data.invoices.length > 0) {
         const transformedInvoices = transformArray(data.invoices, 'invoices');
         try {
-          const result = await importWithPut(db.invoices, transformedInvoices, 'invoices');
+          const result = await importWithAdd(db.invoices, transformedInvoices, 'invoices');
           importCounts.invoices = result.count;
           console.log(`Imported ${importCounts.invoices} invoices`);
         } catch (err) {
@@ -1240,7 +1179,7 @@ export const backupDB = {
       if (data.todos && data.todos.length > 0) {
         const transformedTodos = transformArray(data.todos, 'todos');
         try {
-          const result = await importWithPut(db.todos, transformedTodos, 'todos');
+          const result = await importWithAdd(db.todos, transformedTodos, 'todos');
           importCounts.todos = result.count;
           console.log(`Imported ${importCounts.todos} todos`);
         } catch (err) {
@@ -1254,7 +1193,7 @@ export const backupDB = {
       if (data.savings && data.savings.length > 0) {
         const transformedSavings = transformArray(data.savings, 'savings');
         try {
-          const result = await importWithPut(db.savings, transformedSavings, 'savings');
+          const result = await importWithAdd(db.savings, transformedSavings, 'savings');
           importCounts.savings = result.count;
           console.log(`Imported ${importCounts.savings} savings`);
         } catch (err) {
@@ -1268,7 +1207,7 @@ export const backupDB = {
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
         const transformedSavingsTransactions = transformArray(data.savingsTransactions, 'savingsTransactions');
         try {
-          const result = await importWithPut(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
+          const result = await importWithAdd(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
           importCounts.savingsTransactions = result.count;
           console.log(`Imported ${importCounts.savingsTransactions} savings transactions`);
         } catch (err) {
@@ -1282,7 +1221,7 @@ export const backupDB = {
       if (data.openingBalances && data.openingBalances.length > 0) {
         const transformedOpeningBalances = transformArray(data.openingBalances, 'openingBalances');
         try {
-          const result = await importWithPut(db.openingBalances, transformedOpeningBalances, 'openingBalances');
+          const result = await importWithAdd(db.openingBalances, transformedOpeningBalances, 'openingBalances');
           importCounts.openingBalances = result.count;
           console.log(`Imported ${importCounts.openingBalances} opening balances`);
         } catch (err) {
@@ -1296,7 +1235,7 @@ export const backupDB = {
       if (data.expectedIncome && data.expectedIncome.length > 0) {
         const transformedExpectedIncome = transformArray(data.expectedIncome, 'expectedIncome');
         try {
-          const result = await importWithPut(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
+          const result = await importWithAdd(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
           importCounts.expectedIncome = result.count;
           console.log(`Imported ${importCounts.expectedIncome} expected income records`);
         } catch (err) {

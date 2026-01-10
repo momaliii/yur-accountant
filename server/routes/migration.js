@@ -14,7 +14,44 @@ import { getUserId } from '../middleware/auth.js';
 import mongoose from 'mongoose';
 
 export default async function migrationRoutes(fastify, options) {
-  // Upload and import data
+  // Helper function to delete all user data from MongoDB
+  const deleteAllUserData = async (userId) => {
+    const userIdObj = mongoose.Types.ObjectId.isValid(userId) 
+      ? new mongoose.Types.ObjectId(userId)
+      : userId;
+
+    const deleteResults = await Promise.all([
+      Client.deleteMany({ userId: userIdObj }),
+      Income.deleteMany({ userId: userIdObj }),
+      Expense.deleteMany({ userId: userIdObj }),
+      Debt.deleteMany({ userId: userIdObj }),
+      Goal.deleteMany({ userId: userIdObj }),
+      Invoice.deleteMany({ userId: userIdObj }),
+      Todo.deleteMany({ userId: userIdObj }),
+      List.deleteMany({ userId: userIdObj }),
+      Saving.deleteMany({ userId: userIdObj }),
+      SavingsTransaction.deleteMany({ userId: userIdObj }),
+      OpeningBalance.deleteMany({ userId: userIdObj }),
+      ExpectedIncome.deleteMany({ userId: userIdObj }),
+    ]);
+
+    return {
+      clients: deleteResults[0].deletedCount || 0,
+      income: deleteResults[1].deletedCount || 0,
+      expenses: deleteResults[2].deletedCount || 0,
+      debts: deleteResults[3].deletedCount || 0,
+      goals: deleteResults[4].deletedCount || 0,
+      invoices: deleteResults[5].deletedCount || 0,
+      todos: deleteResults[6].deletedCount || 0,
+      lists: deleteResults[7].deletedCount || 0,
+      savings: deleteResults[8].deletedCount || 0,
+      savingsTransactions: deleteResults[9].deletedCount || 0,
+      openingBalances: deleteResults[10].deletedCount || 0,
+      expectedIncome: deleteResults[11].deletedCount || 0,
+    };
+  };
+
+  // Upload and import data - clean slate approach
   fastify.post('/upload', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
       const userId = getUserId(request);
@@ -23,6 +60,11 @@ export default async function migrationRoutes(fastify, options) {
       if (!data || typeof data !== 'object') {
         return reply.code(400).send({ error: 'Invalid data format' });
       }
+
+      // Step 1: Delete all existing user data first (clean slate)
+      fastify.log.info(`Deleting all existing data for user ${userId} before import`);
+      const deletedCounts = await deleteAllUserData(userId);
+      fastify.log.info(`Deleted existing data:`, deletedCounts);
 
       const results = {
         clients: { imported: 0, errors: [] },
@@ -39,31 +81,31 @@ export default async function migrationRoutes(fastify, options) {
         expectedIncome: { imported: 0, errors: [] },
       };
 
-      // Create a mapping for old IDs to new MongoDB IDs
+      // Create a mapping for old IDs to new MongoDB IDs (for relationships)
       const idMapping = {
         clients: {},
         lists: {},
         savings: {},
+        expenses: {},
       };
 
-      // Import Lists first (todos depend on lists)
+      // Step 2: Import Lists first (todos depend on lists)
+      // Create default list if needed
+      let defaultList = new List({ userId, name: 'Default', color: 'indigo' });
+      await defaultList.save();
+      idMapping.lists['default'] = defaultList._id;
+
       if (data.lists && Array.isArray(data.lists)) {
         for (const list of data.lists) {
           try {
-            // Check if default list exists
-            let defaultList = await List.findOne({ userId, name: 'Default' });
-            if (!defaultList) {
-              defaultList = new List({ userId, name: 'Default', color: 'indigo' });
-              await defaultList.save();
-            }
-
-            // Skip if it's the default list and already exists
-            if (list.name === 'Default' && defaultList) {
-              idMapping.lists[list.id] = defaultList._id;
+            // Skip default list (already created)
+            if (list.name === 'Default') {
+              if (list.id) idMapping.lists[list.id] = defaultList._id;
               results.lists.imported++;
               continue;
             }
 
+            // Create new list (no existence check needed - we deleted all)
             const newList = new List({
               userId,
               name: list.name || 'Unnamed List',
@@ -80,66 +122,30 @@ export default async function migrationRoutes(fastify, options) {
         }
       }
 
-      // Import Clients - check for existing records first to prevent duplicates
+      // Step 3: Import Clients (no existence checks - we deleted all)
       if (data.clients && Array.isArray(data.clients)) {
         for (const client of data.clients) {
           try {
-            // Check if client already exists by name and email (or just name if email is empty)
-            let existingClient = null;
-            if (client.email && client.email.trim()) {
-              existingClient = await Client.findOne({ 
-                userId, 
-                name: client.name,
-                email: client.email 
-              });
-            } else {
-              existingClient = await Client.findOne({ 
-                userId, 
-                name: client.name,
-                $or: [{ email: '' }, { email: { $exists: false } }, { email: null }]
-              });
-            }
-            
-            if (existingClient) {
-              // Update existing client
-              existingClient.email = client.email || existingClient.email;
-              existingClient.phone = client.phone || existingClient.phone;
-              existingClient.paymentModel = client.paymentModel || existingClient.paymentModel;
-              existingClient.fixedAmount = client.fixedAmount;
-              existingClient.adSpendPercentage = client.adSpendPercentage;
-              existingClient.subcontractorCost = client.subcontractorCost;
-              existingClient.currency = client.currency || existingClient.currency;
-              existingClient.services = client.services || existingClient.services;
-              existingClient.notes = client.notes || existingClient.notes;
-              existingClient.rating = client.rating !== undefined ? client.rating : existingClient.rating;
-              existingClient.riskLevel = client.riskLevel || existingClient.riskLevel;
-              existingClient.status = client.status || existingClient.status;
-              await existingClient.save();
-              if (client.id) idMapping.clients[client.id] = existingClient._id;
-              results.clients.imported++;
-            } else {
-              // Create new client
-              const newClient = new Client({
-                userId,
-                name: client.name || 'Unnamed Client',
-                email: client.email,
-                phone: client.phone,
-                paymentModel: client.paymentModel || 'fixed',
-                fixedAmount: client.fixedAmount,
-                adSpendPercentage: client.adSpendPercentage,
-                subcontractorCost: client.subcontractorCost,
-                currency: client.currency || 'EGP',
-                services: client.services || [],
-                notes: client.notes,
-                rating: client.rating || 3,
-                riskLevel: client.riskLevel || 'medium',
-                status: client.status || 'active',
-                createdAt: client.createdAt ? new Date(client.createdAt) : new Date(),
-              });
-              await newClient.save();
-              if (client.id) idMapping.clients[client.id] = newClient._id;
-              results.clients.imported++;
-            }
+            const newClient = new Client({
+              userId,
+              name: client.name || 'Unnamed Client',
+              email: client.email,
+              phone: client.phone,
+              paymentModel: client.paymentModel || 'fixed',
+              fixedAmount: client.fixedAmount,
+              adSpendPercentage: client.adSpendPercentage,
+              subcontractorCost: client.subcontractorCost,
+              currency: client.currency || 'EGP',
+              services: client.services || [],
+              notes: client.notes,
+              rating: client.rating || 3,
+              riskLevel: client.riskLevel || 'medium',
+              status: client.status || 'active',
+              createdAt: client.createdAt ? new Date(client.createdAt) : new Date(),
+            });
+            await newClient.save();
+            if (client.id) idMapping.clients[client.id] = newClient._id;
+            results.clients.imported++;
           } catch (error) {
             results.clients.errors.push({ id: client.id, error: error.message });
           }
@@ -175,57 +181,28 @@ export default async function migrationRoutes(fastify, options) {
 
             const receivedDate = income.receivedDate ? new Date(income.receivedDate) : new Date();
             
-            // Check if income already exists (same clientId, amount, receivedDate, paymentMethod)
-            const existingIncome = await Income.findOne({
+            // Create new income (no existence check - we deleted all)
+            const newIncome = new Income({
               userId,
-              clientId: clientId || null,
+              clientId,
               amount: income.amount || 0,
-              receivedDate: {
-                $gte: new Date(receivedDate.getFullYear(), receivedDate.getMonth(), receivedDate.getDate()),
-                $lt: new Date(receivedDate.getFullYear(), receivedDate.getMonth(), receivedDate.getDate() + 1)
-              },
-              paymentMethod
+              currency: income.currency || 'EGP',
+              paymentMethod,
+              receivedDate,
+              isDeposit: income.isDeposit || false,
+              isFixedPortionOnly: income.isFixedPortionOnly || false,
+              taxCategory: income.taxCategory,
+              isTaxable: income.isTaxable !== undefined ? income.isTaxable : true,
+              taxRate: income.taxRate,
+              netAmount: income.netAmount,
+              fee: income.fee,
+              adSpend: income.adSpend,
+              projectName: income.projectName,
+              notes: income.notes,
+              createdAt: income.createdAt ? new Date(income.createdAt) : new Date(),
             });
-            
-            if (existingIncome) {
-              // Update existing income
-              existingIncome.currency = income.currency || existingIncome.currency;
-              existingIncome.feePercentage = income.feePercentage !== undefined ? income.feePercentage : existingIncome.feePercentage;
-              existingIncome.netAmount = income.netAmount !== undefined ? income.netAmount : existingIncome.netAmount;
-              existingIncome.isDeposit = income.isDeposit !== undefined ? income.isDeposit : existingIncome.isDeposit;
-              existingIncome.isFixedPortionOnly = income.isFixedPortionOnly !== undefined ? income.isFixedPortionOnly : existingIncome.isFixedPortionOnly;
-              existingIncome.taxCategory = income.taxCategory !== undefined ? income.taxCategory : existingIncome.taxCategory;
-              existingIncome.isTaxable = income.isTaxable !== undefined ? income.isTaxable : existingIncome.isTaxable;
-              existingIncome.taxRate = income.taxRate !== undefined ? income.taxRate : existingIncome.taxRate;
-              existingIncome.adSpend = income.adSpend !== undefined ? income.adSpend : existingIncome.adSpend;
-              existingIncome.projectName = income.projectName || existingIncome.projectName;
-              existingIncome.notes = income.notes || existingIncome.notes;
-              await existingIncome.save();
-              results.income.imported++;
-            } else {
-              // Create new income
-              const newIncome = new Income({
-                userId,
-                clientId,
-                amount: income.amount || 0,
-                currency: income.currency || 'EGP',
-                paymentMethod,
-                receivedDate,
-                isDeposit: income.isDeposit || false,
-                isFixedPortionOnly: income.isFixedPortionOnly || false,
-                taxCategory: income.taxCategory,
-                isTaxable: income.isTaxable !== undefined ? income.isTaxable : true,
-                taxRate: income.taxRate,
-                netAmount: income.netAmount,
-                fee: income.fee,
-                adSpend: income.adSpend,
-                projectName: income.projectName,
-                notes: income.notes,
-                createdAt: income.createdAt ? new Date(income.createdAt) : new Date(),
-              });
-              await newIncome.save();
-              results.income.imported++;
-            }
+            await newIncome.save();
+            results.income.imported++;
           } catch (error) {
             results.income.errors.push({ id: income.id, error: error.message });
           }
@@ -243,78 +220,45 @@ export default async function migrationRoutes(fastify, options) {
               ? idMapping.clients[expense.clientId]
               : null;
 
-            // Handle parentRecurringId - if it's a number (old ID), set to null
-            // We'll update it after all expenses are imported if needed
+            // Handle parentRecurringId - if it's a number (old ID), we'll map it after import
             let parentRecurringId = null;
             if (expense.parentRecurringId) {
               // If it's already an ObjectId string, use it
               if (typeof expense.parentRecurringId === 'string' && expense.parentRecurringId.match(/^[0-9a-fA-F]{24}$/)) {
                 parentRecurringId = expense.parentRecurringId;
               } else if (typeof expense.parentRecurringId === 'number') {
-                // Old numeric ID - will be set to null for now
+                // Old numeric ID - will be mapped after import
                 parentRecurringId = null;
               }
             }
 
             const expenseDate = expense.date ? new Date(expense.date) : new Date();
             
-            // Check if expense already exists (same amount, date, category, description)
-            const existingExpense = await Expense.findOne({
+            // Create new expense (no existence check - we deleted all)
+            const newExpense = new Expense({
               userId,
+              clientId,
               amount: expense.amount || 0,
-              date: {
-                $gte: new Date(expenseDate.getFullYear(), expenseDate.getMonth(), expenseDate.getDate()),
-                $lt: new Date(expenseDate.getFullYear(), expenseDate.getMonth(), expenseDate.getDate() + 1)
-              },
+              currency: expense.currency || 'EGP',
               category: expense.category || 'other',
-              description: expense.description || ''
+              date: expenseDate,
+              description: expense.description,
+              isRecurring: expense.isRecurring || false,
+              parentRecurringId,
+              taxCategory: expense.taxCategory,
+              isTaxDeductible: expense.isTaxDeductible || false,
+              taxRate: expense.taxRate,
+              notes: expense.notes,
+              createdAt: expense.createdAt ? new Date(expense.createdAt) : new Date(),
             });
+            await newExpense.save();
             
-            if (existingExpense) {
-              // Update existing expense
-              existingExpense.clientId = clientId !== undefined ? clientId : existingExpense.clientId;
-              existingExpense.currency = expense.currency || existingExpense.currency;
-              existingExpense.isRecurring = expense.isRecurring !== undefined ? expense.isRecurring : existingExpense.isRecurring;
-              existingExpense.parentRecurringId = parentRecurringId !== undefined ? parentRecurringId : existingExpense.parentRecurringId;
-              existingExpense.taxCategory = expense.taxCategory !== undefined ? expense.taxCategory : existingExpense.taxCategory;
-              existingExpense.isTaxDeductible = expense.isTaxDeductible !== undefined ? expense.isTaxDeductible : existingExpense.isTaxDeductible;
-              existingExpense.taxRate = expense.taxRate !== undefined ? expense.taxRate : existingExpense.taxRate;
-              existingExpense.notes = expense.notes || existingExpense.notes;
-              await existingExpense.save();
-              
-              // Store mapping for parentRecurringId resolution
-              if (expense.id) {
-                expenseIdMapping[expense.id] = existingExpense._id;
-              }
-              
-              results.expenses.imported++;
-            } else {
-              // Create new expense
-              const newExpense = new Expense({
-                userId,
-                clientId,
-                amount: expense.amount || 0,
-                currency: expense.currency || 'EGP',
-                category: expense.category || 'other',
-                date: expenseDate,
-                description: expense.description,
-                isRecurring: expense.isRecurring || false,
-                parentRecurringId,
-                taxCategory: expense.taxCategory,
-                isTaxDeductible: expense.isTaxDeductible || false,
-                taxRate: expense.taxRate,
-                notes: expense.notes,
-                createdAt: expense.createdAt ? new Date(expense.createdAt) : new Date(),
-              });
-              await newExpense.save();
-              
-              // Store mapping for parentRecurringId resolution
-              if (expense.id) {
-                expenseIdMapping[expense.id] = newExpense._id;
-              }
-              
-              results.expenses.imported++;
+            // Store mapping for parentRecurringId resolution
+            if (expense.id) {
+              expenseIdMapping[expense.id] = newExpense._id;
             }
+            
+            results.expenses.imported++;
           } catch (error) {
             results.expenses.errors.push({ id: expense.id, error: error.message });
           }
@@ -446,7 +390,7 @@ export default async function migrationRoutes(fastify, options) {
           try {
             const listId = todo.listId && idMapping.lists[todo.listId]
               ? idMapping.lists[todo.listId]
-              : (await List.findOne({ userId, name: 'Default' }))?._id;
+              : idMapping.lists['default']; // Use default list created at the start
 
             if (!listId) {
               results.todos.errors.push({ id: todo.id, error: 'No list found' });
@@ -551,31 +495,18 @@ export default async function migrationRoutes(fastify, options) {
               periodType = 'monthly'; // Default to monthly if invalid
             }
 
-            const existing = await OpeningBalance.findOne({
+            // Create new opening balance (no existence check - we deleted all)
+            const newBalance = new OpeningBalance({
               userId,
               periodType,
               period: balance.period || '',
+              amount: balance.amount || 0,
+              currency: balance.currency || 'EGP',
+              notes: balance.notes,
+              createdAt: balance.createdAt ? new Date(balance.createdAt) : new Date(),
+              updatedAt: balance.updatedAt ? new Date(balance.updatedAt) : new Date(),
             });
-
-            if (existing) {
-              existing.amount = balance.amount || 0;
-              existing.currency = balance.currency || 'EGP';
-              existing.notes = balance.notes;
-              existing.updatedAt = new Date();
-              await existing.save();
-            } else {
-              const newBalance = new OpeningBalance({
-                userId,
-                periodType,
-                period: balance.period || '',
-                amount: balance.amount || 0,
-                currency: balance.currency || 'EGP',
-                notes: balance.notes,
-                createdAt: balance.createdAt ? new Date(balance.createdAt) : new Date(),
-                updatedAt: balance.updatedAt ? new Date(balance.updatedAt) : new Date(),
-              });
-              await newBalance.save();
-            }
+            await newBalance.save();
             results.openingBalances.imported++;
           } catch (error) {
             results.openingBalances.errors.push({ id: balance.id, error: error.message });
@@ -596,33 +527,19 @@ export default async function migrationRoutes(fastify, options) {
               continue;
             }
 
-            const existing = await ExpectedIncome.findOne({
+            // Create new expected income (no existence check - we deleted all)
+            const newExpectedIncome = new ExpectedIncome({
               userId,
               clientId,
-              period: expectedIncome.period,
+              period: expectedIncome.period || '',
+              expectedAmount: expectedIncome.expectedAmount || 0,
+              currency: expectedIncome.currency || 'EGP',
+              notes: expectedIncome.notes,
+              isPaid: expectedIncome.isPaid || false,
+              createdAt: expectedIncome.createdAt ? new Date(expectedIncome.createdAt) : new Date(),
+              updatedAt: expectedIncome.updatedAt ? new Date(expectedIncome.updatedAt) : new Date(),
             });
-
-            if (existing) {
-              existing.expectedAmount = expectedIncome.expectedAmount || 0;
-              existing.currency = expectedIncome.currency || 'EGP';
-              existing.notes = expectedIncome.notes;
-              existing.isPaid = expectedIncome.isPaid || false;
-              existing.updatedAt = new Date();
-              await existing.save();
-            } else {
-              const newExpectedIncome = new ExpectedIncome({
-                userId,
-                clientId,
-                period: expectedIncome.period || '',
-                expectedAmount: expectedIncome.expectedAmount || 0,
-                currency: expectedIncome.currency || 'EGP',
-                notes: expectedIncome.notes,
-                isPaid: expectedIncome.isPaid || false,
-                createdAt: expectedIncome.createdAt ? new Date(expectedIncome.createdAt) : new Date(),
-                updatedAt: expectedIncome.updatedAt ? new Date(expectedIncome.updatedAt) : new Date(),
-              });
-              await newExpectedIncome.save();
-            }
+            await newExpectedIncome.save();
             results.expectedIncome.imported++;
           } catch (error) {
             results.expectedIncome.errors.push({ id: expectedIncome.id, error: error.message });
