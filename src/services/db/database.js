@@ -891,11 +891,28 @@ export const backupDB = {
         expectedIncome: 0,
       };
 
+      // Helper function to import with individual put operations
+      // This ensures IDs are preserved even with ++id auto-increment
+      const importWithPut = async (store, items, name) => {
+        if (!items || items.length === 0) return 0;
+        let count = 0;
+        for (const item of items) {
+          try {
+            // Use put to explicitly set the ID (works with ++id)
+            await store.put(item);
+            count++;
+          } catch (err) {
+            console.error(`Error importing ${name} item:`, item, err);
+            // Continue with other items even if one fails
+          }
+        }
+        return count;
+      };
+
       if (data.lists && data.lists.length > 0) {
         const transformedLists = transformArray(data.lists);
         try {
-          await db.lists.bulkPut(transformedLists);
-          importCounts.lists = transformedLists.length;
+          importCounts.lists = await importWithPut(db.lists, transformedLists, 'lists');
           console.log(`Imported ${importCounts.lists} lists`);
         } catch (err) {
           console.error('Error importing lists:', err);
@@ -906,8 +923,7 @@ export const backupDB = {
       if (data.clients && data.clients.length > 0) {
         const transformedClients = transformArray(data.clients);
         try {
-          await db.clients.bulkPut(transformedClients);
-          importCounts.clients = transformedClients.length;
+          importCounts.clients = await importWithPut(db.clients, transformedClients, 'clients');
           console.log(`Imported ${importCounts.clients} clients`);
         } catch (err) {
           console.error('Error importing clients:', err);
@@ -918,8 +934,7 @@ export const backupDB = {
       if (data.income && data.income.length > 0) {
         const transformedIncome = transformArray(data.income);
         try {
-          await db.income.bulkPut(transformedIncome);
-          importCounts.income = transformedIncome.length;
+          importCounts.income = await importWithPut(db.income, transformedIncome, 'income');
           console.log(`Imported ${importCounts.income} income records`);
         } catch (err) {
           console.error('Error importing income:', err);
@@ -930,8 +945,7 @@ export const backupDB = {
       if (data.expenses && data.expenses.length > 0) {
         const transformedExpenses = transformArray(data.expenses);
         try {
-          await db.expenses.bulkPut(transformedExpenses);
-          importCounts.expenses = transformedExpenses.length;
+          importCounts.expenses = await importWithPut(db.expenses, transformedExpenses, 'expenses');
           console.log(`Imported ${importCounts.expenses} expenses`);
         } catch (err) {
           console.error('Error importing expenses:', err);
@@ -942,8 +956,7 @@ export const backupDB = {
       if (data.debts && data.debts.length > 0) {
         const transformedDebts = transformArray(data.debts);
         try {
-          await db.debts.bulkPut(transformedDebts);
-          importCounts.debts = transformedDebts.length;
+          importCounts.debts = await importWithPut(db.debts, transformedDebts, 'debts');
           console.log(`Imported ${importCounts.debts} debts`);
         } catch (err) {
           console.error('Error importing debts:', err);
@@ -954,8 +967,7 @@ export const backupDB = {
       if (data.goals && data.goals.length > 0) {
         const transformedGoals = transformArray(data.goals);
         try {
-          await db.goals.bulkPut(transformedGoals);
-          importCounts.goals = transformedGoals.length;
+          importCounts.goals = await importWithPut(db.goals, transformedGoals, 'goals');
           console.log(`Imported ${importCounts.goals} goals`);
         } catch (err) {
           console.error('Error importing goals:', err);
@@ -966,8 +978,7 @@ export const backupDB = {
       if (data.invoices && data.invoices.length > 0) {
         const transformedInvoices = transformArray(data.invoices);
         try {
-          await db.invoices.bulkPut(transformedInvoices);
-          importCounts.invoices = transformedInvoices.length;
+          importCounts.invoices = await importWithPut(db.invoices, transformedInvoices, 'invoices');
           console.log(`Imported ${importCounts.invoices} invoices`);
         } catch (err) {
           console.error('Error importing invoices:', err);
@@ -978,8 +989,7 @@ export const backupDB = {
       if (data.todos && data.todos.length > 0) {
         const transformedTodos = transformArray(data.todos);
         try {
-          await db.todos.bulkPut(transformedTodos);
-          importCounts.todos = transformedTodos.length;
+          importCounts.todos = await importWithPut(db.todos, transformedTodos, 'todos');
           console.log(`Imported ${importCounts.todos} todos`);
         } catch (err) {
           console.error('Error importing todos:', err);
@@ -990,8 +1000,7 @@ export const backupDB = {
       if (data.savings && data.savings.length > 0) {
         const transformedSavings = transformArray(data.savings);
         try {
-          await db.savings.bulkPut(transformedSavings);
-          importCounts.savings = transformedSavings.length;
+          importCounts.savings = await importWithPut(db.savings, transformedSavings, 'savings');
           console.log(`Imported ${importCounts.savings} savings`);
         } catch (err) {
           console.error('Error importing savings:', err);
@@ -1002,8 +1011,7 @@ export const backupDB = {
       if (data.savingsTransactions && data.savingsTransactions.length > 0) {
         const transformedSavingsTransactions = transformArray(data.savingsTransactions);
         try {
-          await db.savingsTransactions.bulkPut(transformedSavingsTransactions);
-          importCounts.savingsTransactions = transformedSavingsTransactions.length;
+          importCounts.savingsTransactions = await importWithPut(db.savingsTransactions, transformedSavingsTransactions, 'savingsTransactions');
           console.log(`Imported ${importCounts.savingsTransactions} savings transactions`);
         } catch (err) {
           console.error('Error importing savings transactions:', err);
@@ -1014,8 +1022,7 @@ export const backupDB = {
       if (data.openingBalances && data.openingBalances.length > 0) {
         const transformedOpeningBalances = transformArray(data.openingBalances);
         try {
-          await db.openingBalances.bulkPut(transformedOpeningBalances);
-          importCounts.openingBalances = transformedOpeningBalances.length;
+          importCounts.openingBalances = await importWithPut(db.openingBalances, transformedOpeningBalances, 'openingBalances');
           console.log(`Imported ${importCounts.openingBalances} opening balances`);
         } catch (err) {
           console.error('Error importing opening balances:', err);
@@ -1026,8 +1033,7 @@ export const backupDB = {
       if (data.expectedIncome && data.expectedIncome.length > 0) {
         const transformedExpectedIncome = transformArray(data.expectedIncome);
         try {
-          await db.expectedIncome.bulkPut(transformedExpectedIncome);
-          importCounts.expectedIncome = transformedExpectedIncome.length;
+          importCounts.expectedIncome = await importWithPut(db.expectedIncome, transformedExpectedIncome, 'expectedIncome');
           console.log(`Imported ${importCounts.expectedIncome} expected income records`);
         } catch (err) {
           console.error('Error importing expected income:', err);
@@ -1037,6 +1043,34 @@ export const backupDB = {
 
       const totalImported = Object.values(importCounts).reduce((sum, count) => sum + count, 0);
       console.log(`Total imported: ${totalImported} items`, importCounts);
+      
+      // Verify data was actually saved
+      const verifyCounts = {
+        lists: await db.lists.count(),
+        clients: await db.clients.count(),
+        income: await db.income.count(),
+        expenses: await db.expenses.count(),
+        debts: await db.debts.count(),
+        goals: await db.goals.count(),
+        invoices: await db.invoices.count(),
+        todos: await db.todos.count(),
+        savings: await db.savings.count(),
+        savingsTransactions: await db.savingsTransactions.count(),
+        openingBalances: await db.openingBalances.count(),
+        expectedIncome: await db.expectedIncome.count(),
+      };
+      console.log('Verification - actual counts in database:', verifyCounts);
+      
+      // Warn if counts don't match
+      if (importCounts.lists > 0 && verifyCounts.lists !== importCounts.lists) {
+        console.warn(`Lists count mismatch: imported ${importCounts.lists}, found ${verifyCounts.lists}`);
+      }
+      if (importCounts.clients > 0 && verifyCounts.clients !== importCounts.clients) {
+        console.warn(`Clients count mismatch: imported ${importCounts.clients}, found ${verifyCounts.clients}`);
+      }
+      if (importCounts.income > 0 && verifyCounts.income !== importCounts.income) {
+        console.warn(`Income count mismatch: imported ${importCounts.income}, found ${verifyCounts.income}`);
+      }
     });
   },
   
