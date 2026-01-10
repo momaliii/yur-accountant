@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YUR Finance - Loading</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      width: 100vw;
+      height: 100vh;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      overflow: hidden;
+    }
+
+    .container {
+      text-align: center;
+      z-index: 10;
+    }
+
+    .logo {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 30px;
+      background: linear-gradient(135deg, #6366f1 0%, #06b6d4 50%, #10b981 100%);
+      border-radius: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 48px;
+      font-weight: bold;
+      color: white;
+      box-shadow: 0 20px 60px rgba(99, 102, 241, 0.4);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% {
+        transform: scale(1);
+        box-shadow: 0 20px 60px rgba(99, 102, 241, 0.4);
+      }
+      50% {
+        transform: scale(1.05);
+        box-shadow: 0 25px 70px rgba(99, 102, 241, 0.6);
+      }
+    }
+
+    h1 {
+      color: white;
+      font-size: 32px;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.5px;
+    }
+
+    .subtitle {
+      color: #94a3b8;
+      font-size: 16px;
+      margin-bottom: 40px;
+    }
+
+    .loader {
+      width: 200px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      margin: 0 auto;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .loader-bar {
+      height: 100%;
+      background: linear-gradient(90deg, #6366f1 0%, #06b6d4 50%, #10b981 100%);
+      border-radius: 2px;
+      width: 0%;
+      animation: loading 2s ease-in-out infinite;
+      position: relative;
+    }
+
+    @keyframes loading {
+      0% {
+        width: 0%;
+        left: 0%;
+      }
+      50% {
+        width: 70%;
+        left: 15%;
+      }
+      100% {
+        width: 100%;
+        left: 0%;
+      }
+    }
+
+    .status {
+      color: #cbd5e1;
+      font-size: 14px;
+      margin-top: 20px;
+      min-height: 20px;
+    }
+
+    .dots {
+      display: inline-block;
+      animation: dots 1.5s steps(4, end) infinite;
+    }
+
+    @keyframes dots {
+      0%, 20% {
+        content: '.';
+      }
+      40% {
+        content: '..';
+      }
+      60%, 100% {
+        content: '...';
+      }
+    }
+
+    .particles {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      z-index: 1;
+    }
+
+    .particle {
+      position: absolute;
+      width: 4px;
+      height: 4px;
+      background: rgba(99, 102, 241, 0.5);
+      border-radius: 50%;
+      animation: float 15s infinite ease-in-out;
+    }
+
+    @keyframes float {
+      0%, 100% {
+        transform: translateY(0) translateX(0);
+        opacity: 0;
+      }
+      10% {
+        opacity: 1;
+      }
+      90% {
+        opacity: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="particles" id="particles"></div>
+  <div class="container">
+    <div class="logo">Y</div>
+    <h1>YUR Finance</h1>
+    <p class="subtitle">Media Buyer Dashboard</p>
+    <div class="loader">
+      <div class="loader-bar"></div>
+    </div>
+    <p class="status" id="status">Initializing<span class="dots">...</span></p>
+  </div>
+
+  <script>
+    // Create floating particles
+    const particlesContainer = document.getElementById('particles');
+    for (let i = 0; i < 20; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'particle';
+      particle.style.left = Math.random() * 100 + '%';
+      particle.style.top = Math.random() * 100 + '%';
+      particle.style.animationDelay = Math.random() * 15 + 's';
+      particle.style.animationDuration = (10 + Math.random() * 10) + 's';
+      particlesContainer.appendChild(particle);
+    }
+
+    // Update status messages
+    const statusEl = document.getElementById('status');
+    const messages = [
+      'Loading application',
+      'Initializing database',
+      'Loading exchange rates',
+      'Preparing interface',
+      'Almost ready'
+    ];
+    
+    let messageIndex = 0;
+    const updateStatus = () => {
+      if (messageIndex < messages.length) {
+        statusEl.innerHTML = messages[messageIndex] + '<span class="dots">...</span>';
+        messageIndex++;
+        setTimeout(updateStatus, 800);
+      }
+    };
+
+    updateStatus();
+
+    // Listen for ready message from main process
+    window.addEventListener('DOMContentLoaded', () => {
+      // Status will be updated by main process via IPC
+    });
+  </script>
+</body>
+</html>
+

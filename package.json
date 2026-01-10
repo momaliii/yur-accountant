@@ -1,0 +1,134 @@
+{
+  "name": "yur-accountant",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A comprehensive financial dashboard for media buyers",
+  "author": "MDZ",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "server": "node server/index.js",
+    "server:dev": "node --watch server/index.js",
+    "create-admin": "node scripts/createAdmin.js",
+    "init-plans": "node scripts/initPlans.js",
+    "init-app-versions": "node scripts/initAppVersions.js",
+    "create-app-version": "node scripts/createAppVersion.js",
+    "create-app-version": "node scripts/createAppVersion.js",
+    "electron:dev": "NODE_ENV=development electron .",
+    "electron:build": "npm run build && electron-builder",
+    "electron:build:mac": "npm run build && electron-builder --mac",
+    "electron:build:win": "npm run build && electron-builder --win",
+    "electron:build:linux": "npm run build && electron-builder --linux",
+    "capacitor:init": "npx cap init",
+    "capacitor:sync": "npx cap sync",
+    "capacitor:copy": "npx cap copy",
+    "capacitor:update": "npx cap update",
+    "mobile:build": "npm run build && npx cap sync",
+    "mobile:ios": "npm run mobile:build && npx cap open ios",
+    "mobile:android": "npm run mobile:build && npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/app": "^5.0.6",
+    "@capacitor/core": "^5.5.1",
+    "@capacitor/keyboard": "^5.0.6",
+    "@capacitor/status-bar": "^5.0.6",
+    "@fastify/cors": "^10.1.0",
+    "@fastify/jwt": "^9.1.0",
+    "axios": "^1.7.9",
+    "bcrypt": "^5.1.1",
+    "dexie": "^4.2.1",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.6.2",
+    "jspdf": "^4.0.0",
+    "jspdf-autotable": "^5.0.7",
+    "lucide-react": "^0.562.0",
+    "mongoose": "^8.21.0",
+    "nodemailer": "^7.0.12",
+    "qrcode": "^1.5.4",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-grid-layout": "^1.5.3",
+    "react-router-dom": "^7.11.0",
+    "recharts": "^3.6.0",
+    "redis": "^5.10.0",
+    "socket.io": "^4.8.3",
+    "speakeasy": "^2.0.0",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^5.5.1",
+    "@capacitor/cli": "^5.5.1",
+    "@capacitor/ios": "^5.5.1",
+    "@eslint/js": "^9.39.1",
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/react": "^19.2.5",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.1",
+    "electron": "^39.2.7",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.4.24",
+    "globals": "^16.5.0",
+    "tailwindcss": "^4.1.18",
+    "vite": "^7.2.4"
+  },
+  "build": {
+    "appId": "com.mdz.yur-accountant",
+    "productName": "YUR Finance",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!dist/**/*.map",
+      "!**/*.map"
+    ],
+    "asar": true,
+    "asarUnpack": [
+      "electron/preload.js",
+      "electron/splash.html"
+    ],
+    "extraFiles": [
+      {
+        "from": "electron/splash.html",
+        "to": "electron/splash.html"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  }
+}
