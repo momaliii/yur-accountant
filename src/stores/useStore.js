@@ -86,7 +86,7 @@ export const useDataStore = create((set, get) => ({
   // Helper to sync to API (runs in background, doesn't block)
   syncToAPI: async (entity, operation, data) => {
     if (!authService.isAuthenticated()) {
-      return; // Skip if not authenticated
+      return null; // Skip if not authenticated
     }
     
     try {
@@ -106,34 +106,35 @@ export const useDataStore = create((set, get) => ({
       };
       
       const api = apiMap[entity];
-      if (!api) return;
+      if (!api) return null;
       
       switch (operation) {
         case 'add':
-          await api.add(data);
-          break;
+          const added = await api.add(data);
+          return added; // Return server response with _id
         case 'update':
           // Use mongoId if available (for records synced from server), otherwise use id
           const updateId = data.mongoId || data._id || data.id;
           if (!updateId) {
             console.warn(`Cannot update ${entity}: no ID found`, data);
-            return;
+            return null;
           }
           await api.update(updateId, data);
-          break;
+          return null;
         case 'delete':
           // Use mongoId if available (for records synced from server), otherwise use id
           const deleteId = data.mongoId || data._id || data.id;
           if (!deleteId) {
             console.warn(`Cannot delete ${entity}: no ID found`, data);
-            return;
+            return null;
           }
           await api.delete(deleteId);
-          break;
+          return null;
       }
     } catch (error) {
       console.error(`Failed to sync ${entity} ${operation}:`, error);
       // Don't throw - allow local operation to succeed
+      return null;
     }
   },
   
@@ -182,8 +183,19 @@ export const useDataStore = create((set, get) => ({
       const newClient = { ...client, id };
       set((state) => ({ clients: [...state.clients, newClient] }));
       
-      // Sync to API in background
-      get().syncToAPI('client', 'add', newClient).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('client', 'add', newClient).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          clientsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            clients: state.clients.map((c) => 
+              c.id === id ? { ...c, mongoId: serverResponse._id } : c
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -232,8 +244,19 @@ export const useDataStore = create((set, get) => ({
       const newIncome = { ...income, id };
       set((state) => ({ income: [newIncome, ...state.income] }));
       
-      // Sync to API in background
-      get().syncToAPI('income', 'add', newIncome).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('income', 'add', newIncome).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          incomeDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            income: state.income.map((i) => 
+              i.id === id ? { ...i, mongoId: serverResponse._id } : i
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -282,8 +305,19 @@ export const useDataStore = create((set, get) => ({
       const newExpense = { ...expense, id };
       set((state) => ({ expenses: [newExpense, ...state.expenses] }));
       
-      // Sync to API in background
-      get().syncToAPI('expense', 'add', newExpense).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('expense', 'add', newExpense).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          expensesDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            expenses: state.expenses.map((e) => 
+              e.id === id ? { ...e, mongoId: serverResponse._id } : e
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -568,8 +602,19 @@ export const useDataStore = create((set, get) => ({
       const newDebt = { ...debt, id };
       set((state) => ({ debts: [...state.debts, newDebt] }));
       
-      // Sync to API in background
-      get().syncToAPI('debt', 'add', newDebt).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('debt', 'add', newDebt).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          debtsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            debts: state.debts.map((d) => 
+              d.id === id ? { ...d, mongoId: serverResponse._id } : d
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -618,8 +663,19 @@ export const useDataStore = create((set, get) => ({
       const newGoal = { ...goal, id, currentAmount: 0 };
       set((state) => ({ goals: [...state.goals, newGoal] }));
       
-      // Sync to API in background
-      get().syncToAPI('goal', 'add', newGoal).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('goal', 'add', newGoal).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          goalsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            goals: state.goals.map((g) => 
+              g.id === id ? { ...g, mongoId: serverResponse._id } : g
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -684,8 +740,19 @@ export const useDataStore = create((set, get) => ({
       const newInvoice = { ...invoice, id };
       set((state) => ({ invoices: [newInvoice, ...state.invoices] }));
       
-      // Sync to API in background
-      get().syncToAPI('invoice', 'add', newInvoice).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('invoice', 'add', newInvoice).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          invoicesDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            invoices: state.invoices.map((inv) => 
+              inv.id === id ? { ...inv, mongoId: serverResponse._id } : inv
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -734,8 +801,19 @@ export const useDataStore = create((set, get) => ({
       const newTodo = { ...todo, id };
       set((state) => ({ todos: [...state.todos, newTodo] }));
       
-      // Sync to API in background
-      get().syncToAPI('todo', 'add', newTodo).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('todo', 'add', newTodo).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          todosDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            todos: state.todos.map((t) => 
+              t.id === id ? { ...t, mongoId: serverResponse._id } : t
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -818,8 +896,19 @@ export const useDataStore = create((set, get) => ({
       const newList = { ...list, id };
       set((state) => ({ lists: [...state.lists, newList] }));
       
-      // Sync to API in background
-      get().syncToAPI('list', 'add', newList).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('list', 'add', newList).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          listsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            lists: state.lists.map((l) => 
+              l.id === id ? { ...l, mongoId: serverResponse._id } : l
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -868,8 +957,19 @@ export const useDataStore = create((set, get) => ({
       const newSavings = { ...savings, id };
       set((state) => ({ savings: [...state.savings, newSavings] }));
       
-      // Sync to API in background
-      get().syncToAPI('saving', 'add', newSavings).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('saving', 'add', newSavings).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          savingsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            savings: state.savings.map((s) => 
+              s.id === id ? { ...s, mongoId: serverResponse._id } : s
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -942,8 +1042,19 @@ export const useDataStore = create((set, get) => ({
         });
       }
       
-      // Sync to API in background
-      get().syncToAPI('savingsTransaction', 'add', newTransaction).catch(() => {});
+      // Sync to API in background and update with mongoId from server response
+      get().syncToAPI('savingsTransaction', 'add', newTransaction).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          savingsTransactionsDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          set((state) => ({
+            savingsTransactions: state.savingsTransactions.map((t) => 
+              t.id === id ? { ...t, mongoId: serverResponse._id } : t
+            ),
+          }));
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -1094,9 +1205,19 @@ export const useDataStore = create((set, get) => ({
       const updatedBalances = await openingBalancesDB.getAll();
       set({ openingBalances: updatedBalances });
       
-      // Sync to API in background
+      // Sync to API in background and update with mongoId from server response
       const balanceWithId = updatedBalances.find(b => b.id === id) || { ...balance, id };
-      get().syncToAPI('openingBalance', 'add', balanceWithId).catch(() => {});
+      get().syncToAPI('openingBalance', 'add', balanceWithId).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          openingBalancesDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          const updatedBalancesAfterSync = updatedBalances.map((b) => 
+            b.id === id ? { ...b, mongoId: serverResponse._id } : b
+          );
+          set({ openingBalances: updatedBalancesAfterSync });
+        }
+      }).catch(() => {});
       
       return id;
     } catch (error) {
@@ -1150,10 +1271,20 @@ export const useDataStore = create((set, get) => ({
       const updatedExpectedIncome = await expectedIncomeDB.getAll();
       set({ expectedIncome: updatedExpectedIncome });
       
-      // Sync to API in background
+      // Sync to API in background and update with mongoId from server response
       const itemWithId = updatedExpectedIncome.find(ei => ei.id === id) || { ...expectedIncome, id };
       // The API POST endpoint uses upsert logic, so it will update if exists or create new
-      get().syncToAPI('expectedIncome', 'add', itemWithId).catch(async (error) => {
+      get().syncToAPI('expectedIncome', 'add', itemWithId).then((serverResponse) => {
+        if (serverResponse && serverResponse._id) {
+          // Update local record with mongoId from server
+          expectedIncomeDB.update(id, { mongoId: serverResponse._id }).catch(() => {});
+          // Update in-memory state
+          const updatedExpectedIncomeAfterSync = updatedExpectedIncome.map((ei) => 
+            ei.id === id ? { ...ei, mongoId: serverResponse._id } : ei
+          );
+          set({ expectedIncome: updatedExpectedIncomeAfterSync });
+        }
+      }).catch(async (error) => {
         // If sync fails, log but don't throw - local operation succeeded
         console.error('Failed to sync expected income to API:', error);
       });
