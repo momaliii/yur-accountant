@@ -83,59 +83,10 @@ export const useDataStore = create((set, get) => ({
     lastSyncTime: null,
   },
   
-  // Helper to sync to API (runs in background, doesn't block)
+  // Helper to sync to API (DISABLED - data saves locally only)
   syncToAPI: async (entity, operation, data) => {
-    if (!authService.isAuthenticated()) {
-      return null; // Skip if not authenticated
-    }
-    
-    try {
-      const apiMap = {
-        client: clientsAPI,
-        income: incomeAPI,
-        expense: expensesAPI,
-        debt: debtsAPI,
-        goal: goalsAPI,
-        invoice: invoicesAPI,
-        todo: todosAPI,
-        list: listsAPI,
-        saving: savingsAPI,
-        savingsTransaction: savingsTransactionsAPI,
-        openingBalance: openingBalancesAPI,
-        expectedIncome: expectedIncomeAPI,
-      };
-      
-      const api = apiMap[entity];
-      if (!api) return null;
-      
-      switch (operation) {
-        case 'add':
-          const added = await api.add(data);
-          return added; // Return server response with _id
-        case 'update':
-          // Use mongoId if available (for records synced from server), otherwise use id
-          const updateId = data.mongoId || data._id || data.id;
-          if (!updateId) {
-            console.warn(`Cannot update ${entity}: no ID found`, data);
-            return null;
-          }
-          await api.update(updateId, data);
-          return null;
-        case 'delete':
-          // Use mongoId if available (for records synced from server), otherwise use id
-          const deleteId = data.mongoId || data._id || data.id;
-          if (!deleteId) {
-            console.warn(`Cannot delete ${entity}: no ID found`, data);
-            return null;
-          }
-          await api.delete(deleteId);
-          return null;
-      }
-    } catch (error) {
-      console.error(`Failed to sync ${entity} ${operation}:`, error);
-      // Don't throw - allow local operation to succeed
-      return null;
-    }
+    // MongoDB sync disabled - data saves to IndexedDB only
+    return null;
   },
   
   // Initialize data from IndexedDB

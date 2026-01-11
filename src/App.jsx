@@ -78,30 +78,9 @@ export default function App() {
         await initializeData();
         console.log('Database initialized successfully');
         
-        // Sync from server if authenticated (for multi-device support)
-        // Only sync once per session to prevent duplicates
-        // Skip sync if user just deleted data
-        const skipAutoSync = localStorage.getItem('skipAutoSync') === 'true';
-        if (skipAutoSync) {
-          localStorage.removeItem('skipAutoSync');
-          console.log('Skipping auto-sync (data was just deleted)');
-        } else if (isAuthenticated && !hasSynced) {
-          console.log('User authenticated, syncing data from server...');
-          setHasSynced(true);
-          try {
-            const syncResult = await syncService.syncFromServer();
-            if (syncResult.success) {
-              console.log('Data synced from server successfully');
-              // Reload data after sync
-              await initializeData();
-            } else {
-              console.log('Sync skipped:', syncResult.error);
-            }
-          } catch (error) {
-            console.error('Failed to sync from server:', error);
-            // Continue even if sync fails - local data is still available
-          }
-        }
+        // MongoDB sync disabled - data saves locally only (IndexedDB)
+        // Server sync is disabled to avoid sync issues
+        console.log('MongoDB sync disabled - using local storage only');
         
         // Clean up any duplicate expenses first
         console.log('Cleaning up duplicate expenses...');
