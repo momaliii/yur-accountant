@@ -138,7 +138,7 @@ export const useDataStore = create((set, get) => ({
   // Auto-save current data snapshot to file (Electron/Capacitor) or trigger download in browser
   autoSaveToFile: async () => {
     try {
-      const fileStorageModule = await import('../services/storage/fileStorage');
+      const fileStorageModule = await import('../services/storage/fileStorage.js');
       const fileStorage = fileStorageModule.default || fileStorageModule;
 
       const state = get();
@@ -168,7 +168,7 @@ export const useDataStore = create((set, get) => ({
     set({ isLoading: true, error: null });
     
     // Import fileStorage for auto-save
-    const fileStorage = (await import('../services/storage/fileStorage')).default;
+    const fileStorage = (await import('../services/storage/fileStorage.js')).default;
     try {
       const [clients, income, expenses, debts, goals, invoices, todos, lists, savings, savingsTransactions, openingBalances, expectedIncome] = await Promise.all([
         clientsDB.getAll().catch(() => []),
