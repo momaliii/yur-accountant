@@ -9,6 +9,7 @@ import { useDataStore, useSettingsStore } from './stores/useStore';
 import { useAuthStore } from './stores/authStore';
 import currencyService from './services/currency/currencyService';
 import syncService from './services/sync/syncService';
+import fileStorage from './services/storage/fileStorage';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -63,6 +64,7 @@ export default function App() {
     initializeAuth();
   }, [initializeAuth]);
 
+  // Initial local setup (IndexedDB + file backup)
   useEffect(() => {
     // Check if running in Electron
     const isElectron = !!(window.electron || (typeof window !== 'undefined' && window.process && window.process.type === 'renderer'));
@@ -73,14 +75,22 @@ export default function App() {
     // Initialize data and wait for completion
     const initApp = async () => {
       try {
-        // Initialize database
-        console.log('Initializing database...');
-        await initializeData();
-        console.log('Database initialized successfully');
+        // Initialize file storage (for Electron/Capacitor)
+        await fileStorage.initialize();
         
-        // MongoDB sync disabled - data saves locally only (IndexedDB)
-        // Server sync is disabled to avoid sync issues
-        console.log('MongoDB sync disabled - using local storage only');
+        // Try to load data from file first (if available)
+        const fileData = await fileStorage.load();
+        if (fileData) {
+          console.log('Data loaded from file, importing to IndexedDB...');
+          const { backupDB } = await import('./services/db/database');
+          await backupDB.importAll(fileData);
+          console.log('Data imported from file to IndexedDB');
+        }
+        
+        // Initialize database from local IndexedDB / file
+        console.log('Initializing local database...');
+        await initializeData();
+        console.log('Local database initialized successfully');
         
         // Clean up any duplicate expenses first
         console.log('Cleaning up duplicate expenses...');
@@ -175,7 +185,31 @@ export default function App() {
     };
     
     initApp();
-  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates, isAuthenticated, hasSynced]);
+  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates]);
+  
+  // Automatic sync from server on login (multi-device support)
+  useEffect(() => {
+    const syncOnLogin = async () => {
+      if (!isAuthenticated || hasSynced) return;
+
+      try {
+        console.log('Syncing data from server after login...');
+        const result = await syncService.syncFromServer();
+        if (result?.success) {
+          console.log('Server sync successful, reloading local data from IndexedDB...');
+          await initializeData();
+        } else {
+          console.warn('Server sync failed or returned no data:', result?.error);
+        }
+      } catch (error) {
+        console.error('Error during login sync from server:', error);
+      } finally {
+        setHasSynced(true);
+      }
+    };
+
+    syncOnLogin();
+  }, [isAuthenticated, hasSynced, initializeData]);
   
   // Reset sync flag when authentication state changes
   useEffect(() => {
