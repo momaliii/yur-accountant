@@ -40,6 +40,15 @@ class SyncService {
     this.isSyncing = true;
 
     try {
+      // First, ensure all pending queue operations are processed and completed
+      // Wait a bit to ensure server has processed the sync operations
+      if (this.syncQueue.length > 0) {
+        console.log('Processing queue before syncing from server...');
+        await this.processQueue();
+        // Wait a moment for server to process the operations
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
       const [
         clients,
         income,
@@ -68,20 +77,41 @@ class SyncService {
         expectedIncomeAPI.getAll().catch(() => []),
       ]);
 
-      // Import to IndexedDB
+      // Get local data before clearing to merge with server data
+      const localData = await backupDB.exportAll();
+      
+      // Merge local data (that hasn't been synced yet) with server data
+      // Priority: Server data (has mongoId) > Local data (no mongoId)
+      const mergeData = (localArray, serverArray, key = 'id') => {
+        const merged = [...serverArray];
+        const serverIds = new Set(serverArray.map(item => item.mongoId || item._id || item[key]));
+        
+        // Add local items that don't exist on server (not yet synced)
+        localArray.forEach(localItem => {
+          const localId = localItem.mongoId || localItem._id || localItem[key];
+          if (!serverIds.has(localId) && !localItem.mongoId) {
+            // Local item without mongoId (not synced yet) - keep it
+            merged.push(localItem);
+          }
+        });
+        
+        return merged;
+      };
+
+      // Import merged data to IndexedDB
       const data = {
-        clients,
-        income,
-        expenses,
-        debts,
-        goals,
-        invoices,
-        todos,
-        lists,
-        savings,
-        savingsTransactions,
-        openingBalances,
-        expectedIncome,
+        clients: mergeData(localData.clients || [], clients || [], 'id'),
+        income: mergeData(localData.income || [], income || [], 'id'),
+        expenses: mergeData(localData.expenses || [], expenses || [], 'id'),
+        debts: mergeData(localData.debts || [], debts || [], 'id'),
+        goals: mergeData(localData.goals || [], goals || [], 'id'),
+        invoices: mergeData(localData.invoices || [], invoices || [], 'id'),
+        todos: mergeData(localData.todos || [], todos || [], 'id'),
+        lists: mergeData(localData.lists || [], lists || [], 'id'),
+        savings: mergeData(localData.savings || [], savings || [], 'id'),
+        savingsTransactions: mergeData(localData.savingsTransactions || [], savingsTransactions || [], 'id'),
+        openingBalances: mergeData(localData.openingBalances || [], openingBalances || [], 'id'),
+        expectedIncome: mergeData(localData.expectedIncome || [], expectedIncome || [], 'id'),
       };
 
       await backupDB.importAll(data);
@@ -91,18 +121,18 @@ class SyncService {
       return {
         success: true,
         data: {
-          clients: clients.length,
-          income: income.length,
-          expenses: expenses.length,
-          debts: debts.length,
-          goals: goals.length,
-          invoices: invoices.length,
-          todos: todos.length,
-          lists: lists.length,
-          savings: savings.length,
-          savingsTransactions: savingsTransactions.length,
-          openingBalances: openingBalances.length,
-          expectedIncome: expectedIncome.length,
+          clients: data.clients.length,
+          income: data.income.length,
+          expenses: data.expenses.length,
+          debts: data.debts.length,
+          goals: data.goals.length,
+          invoices: data.invoices.length,
+          todos: data.todos.length,
+          lists: data.lists.length,
+          savings: data.savings.length,
+          savingsTransactions: data.savingsTransactions.length,
+          openingBalances: data.openingBalances.length,
+          expectedIncome: data.expectedIncome.length,
         },
       };
     } catch (error) {
