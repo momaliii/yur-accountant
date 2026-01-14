@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Upload, Download, CheckCircle2, XCircle, Loader2, Database, Cloud, Trash2, FileUp } from 'lucide-react';
 import Card from '../components/ui/Card';
@@ -12,6 +12,7 @@ export default function Migration() {
   const navigate = useNavigate();
   const { isAuthenticated } = useAuthStore();
   const { initializeData } = useDataStore();
+  const fileInputRef = useRef(null);
   const [isExporting, setIsExporting] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -274,24 +275,28 @@ export default function Migration() {
           Restore your data from a previously exported backup file. This will replace all current local data.
         </p>
         <div className="flex items-center gap-3">
-          <label className="cursor-pointer">
-            <input
-              type="file"
-              accept=".json,application/json"
-              onChange={handleRestore}
-              className="hidden"
-              disabled={isRestoring}
-            />
-            <Button
-              as="span"
-              loading={isRestoring}
-              icon={FileUp}
-              variant="outline"
-              disabled={isRestoring}
-            >
-              {isRestoring ? 'Restoring...' : 'Choose Backup File'}
-            </Button>
-          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={handleRestore}
+            className="hidden"
+            disabled={isRestoring}
+          />
+          <Button
+            type="button"
+            loading={isRestoring}
+            icon={FileUp}
+            variant="outline"
+            disabled={isRestoring}
+            onClick={() => {
+              if (fileInputRef.current && !isRestoring) {
+                fileInputRef.current.click();
+              }
+            }}
+          >
+            {isRestoring ? 'Restoring...' : 'Choose Backup File'}
+          </Button>
         </div>
         {success && (
           <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">
