@@ -124,8 +124,10 @@ export const useDataStore = create((set, get) => ({
 
       // Queue operation and try to process immediately in background
       syncService.queueOperation(operationPayload);
-      // Fire-and-forget processing; errors are handled inside syncService
-      syncService.processQueue();
+      // Process queue in background (fire-and-forget); errors are handled inside syncService
+      syncService.processQueue().catch(error => {
+        console.error('Error processing sync queue:', error);
+      });
 
       return true;
     } catch (error) {

@@ -294,7 +294,7 @@ class SyncService {
   }
 
   // Initialize sync service
-  init() {
+  async init() {
     // Load queue from localStorage
     const savedQueue = localStorage.getItem('syncQueue');
     if (savedQueue) {
@@ -309,14 +309,19 @@ class SyncService {
     // Load last sync time
     this.lastSyncTime = localStorage.getItem('lastSyncTime');
 
-    // Process queue on init if authenticated
-    if (this.isAuthenticated()) {
-      this.processQueue();
+    // Process queue on init if authenticated (wait for completion)
+    if (this.isAuthenticated() && this.syncQueue.length > 0) {
+      console.log(`Processing ${this.syncQueue.length} queued sync operations on init...`);
+      await this.processQueue();
+      console.log('Sync queue processed on init');
     }
   }
 }
 
 const syncService = new SyncService();
-syncService.init();
+// Initialize sync service (async, but don't block)
+syncService.init().catch(error => {
+  console.error('Error initializing sync service:', error);
+});
 
 export default syncService;

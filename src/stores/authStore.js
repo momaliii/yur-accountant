@@ -96,7 +96,19 @@ export const useAuthStore = create(
         }
       },
 
-      logout: () => {
+      logout: async () => {
+        // Clear local IndexedDB data when logging out to prevent data mixing
+        try {
+          const { backupDB } = await import('../services/db/database.js');
+          await backupDB.clearAll();
+          console.log('Local data cleared on logout');
+        } catch (error) {
+          console.error('Error clearing local data on logout:', error);
+        }
+        
+        // Clear last user ID
+        localStorage.removeItem('lastUserId');
+        
         authService.logout();
         set({
           user: null,

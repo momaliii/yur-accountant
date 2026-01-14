@@ -193,6 +193,32 @@ export default function App() {
       if (!isAuthenticated || hasSynced) return;
 
       try {
+        // Get current user from auth store
+        const { useAuthStore } = await import('./stores/authStore.js');
+        const currentUser = useAuthStore.getState().user;
+        const currentUserId = currentUser?.id || currentUser?._id;
+        
+        // Check if this is a different user than before (stored in localStorage)
+        const lastUserId = localStorage.getItem('lastUserId');
+        
+        if (lastUserId && lastUserId !== currentUserId) {
+          // Different user logged in - clear local data to prevent mixing
+          console.log('Different user detected, clearing local data...');
+          const { backupDB } = await import('./services/db/database.js');
+          await backupDB.clearAll();
+          console.log('Local data cleared for new user');
+        }
+        
+        // Store current user ID
+        if (currentUserId) {
+          localStorage.setItem('lastUserId', currentUserId);
+        }
+        
+        // First, process any pending sync queue operations to ensure local changes are synced
+        console.log('Processing pending sync queue...');
+        await syncService.processQueue();
+        
+        // Then sync from server
         console.log('Syncing data from server after login...');
         const result = await syncService.syncFromServer();
         if (result?.success) {
