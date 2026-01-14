@@ -9,7 +9,7 @@ import { useDataStore, useSettingsStore } from './stores/useStore';
 import { useAuthStore } from './stores/authStore';
 import currencyService from './services/currency/currencyService';
 import syncService from './services/sync/syncService';
-import fileStorage from './services/storage/fileStorage';
+import fileStorage from './services/storage/fileStorage.js';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./pages/Dashboard'));

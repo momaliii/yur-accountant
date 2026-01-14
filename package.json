@@ -1,7 +1,7 @@
 {
   "name": "yur-accountant",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "module",
   "description": "A comprehensive financial dashboard for media buyers",
   "author": "MDZ",
@@ -16,7 +16,6 @@
     "create-admin": "node scripts/createAdmin.js",
     "init-plans": "node scripts/initPlans.js",
     "init-app-versions": "node scripts/initAppVersions.js",
-    "create-app-version": "node scripts/createAppVersion.js",
     "create-app-version": "node scripts/createAppVersion.js",
     "electron:dev": "NODE_ENV=development electron .",
     "electron:build": "npm run build && electron-builder",
