@@ -202,11 +202,13 @@ export default function Expenses() {
 
       setIsModalOpen(false);
       setFormData(initialFormState);
+      setEditingExpense(null);
     } catch (error) {
       console.error('Failed to save expense:', error);
+      alert('Failed to save expense. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   };
 
   const handleDelete = async (expense) => {

@@ -23,7 +23,7 @@ import currencyService from '../services/currency/currencyService';
 
 const DEBT_STATUSES = [
   { value: 'pending', label: 'Pending', color: 'amber' },
-  { value: 'partial', label: 'Partially Paid', color: 'cyan' },
+  { value: 'partial', label: 'سداد جزئي', color: 'cyan' },
   { value: 'paid', label: 'Paid', color: 'emerald' },
   { value: 'overdue', label: 'Overdue', color: 'red' },
 ];
@@ -36,6 +36,7 @@ const initialFormState = {
   dueDate: '',
   status: 'pending',
   notes: '',
+  paidAmount: 0,
 };
 
 export default function Debts() {
@@ -44,9 +45,15 @@ export default function Debts() {
 
   const [activeTab, setActiveTab] = useState('owed_to_me');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isPartialPaymentModalOpen, setIsPartialPaymentModalOpen] = useState(false);
+  const [selectedDebt, setSelectedDebt] = useState(null);
+  const [partialPaymentAmount, setPartialPaymentAmount] = useState('');
+  const [partialPaymentError, setPartialPaymentError] = useState('');
+  const [formError, setFormError] = useState('');
   const [editingDebt, setEditingDebt] = useState(null);
   const [formData, setFormData] = useState(initialFormState);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmittingPartial, setIsSubmittingPartial] = useState(false);
 
   // Filter debts by type
   const filteredDebts = useMemo(() => {
@@ -59,15 +66,21 @@ export default function Debts() {
       });
   }, [debts, activeTab]);
 
-  // Calculate totals
+  // Calculate totals (accounting for partial payments)
   const totals = useMemo(() => {
     const owedToMe = debts
       .filter((d) => d.type === 'owed_to_me' && d.status !== 'paid')
-      .reduce((sum, d) => sum + d.amount, 0);
+      .reduce((sum, d) => {
+        const paidAmount = d.paidAmount || 0;
+        return sum + (d.amount - paidAmount);
+      }, 0);
 
     const iOwe = debts
       .filter((d) => d.type === 'i_owe' && d.status !== 'paid')
-      .reduce((sum, d) => sum + d.amount, 0);
+      .reduce((sum, d) => {
+        const paidAmount = d.paidAmount || 0;
+        return sum + (d.amount - paidAmount);
+      }, 0);
 
     const overdue = debts.filter((d) => {
       if (d.status === 'paid') return false;
@@ -109,6 +122,7 @@ export default function Debts() {
       dueDate: debt.dueDate || '',
       status: debt.status || 'pending',
       notes: debt.notes || '',
+      paidAmount: debt.paidAmount || 0,
     });
     setIsModalOpen(true);
     
@@ -142,6 +156,7 @@ export default function Debts() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setFormError('');
 
     try {
       const debtData = {
@@ -152,7 +167,30 @@ export default function Debts() {
         dueDate: formData.dueDate || null,
         status: formData.status,
         notes: formData.notes,
+        paidAmount: parseFloat(formData.paidAmount) || 0,
       };
+      
+      // Validate amount
+      if (isNaN(debtData.amount) || debtData.amount <= 0) {
+        setFormError('الرجاء إدخال مبلغ صحيح');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Validate paid amount doesn't exceed total amount
+      if (debtData.paidAmount > debtData.amount) {
+        setFormError('المبلغ المدفوع لا يمكن أن يتجاوز المبلغ الإجمالي');
+        setIsSubmitting(false);
+        return;
+      }
+      
+      // Auto-update status based on paid amount
+      if (debtData.paidAmount > 0 && debtData.paidAmount < debtData.amount) {
+        debtData.status = 'partial';
+      } else if (debtData.paidAmount >= debtData.amount) {
+        debtData.status = 'paid';
+        debtData.paidAmount = debtData.amount;
+      }
 
       if (editingDebt) {
         await updateDebt(editingDebt.id, debtData);
@@ -160,13 +198,18 @@ export default function Debts() {
         await addDebt(debtData);
       }
 
+      // Close modal only on success
       setIsModalOpen(false);
       setFormData(initialFormState);
+      setEditingDebt(null);
+      setFormError('');
     } catch (error) {
       console.error('Failed to save debt:', error);
+      const errorMessage = error.message || 'فشل في حفظ الدين. الرجاء المحاولة مرة أخرى.';
+      setFormError(errorMessage);
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   };
 
   const handleDelete = async (debt) => {
@@ -176,7 +219,70 @@ export default function Debts() {
   };
 
   const handleMarkPaid = async (debt) => {
-    await updateDebt(debt.id, { status: 'paid' });
+    await updateDebt(debt.id, { 
+      status: 'paid',
+      paidAmount: debt.amount 
+    });
+  };
+
+  const handlePartialPayment = (debt) => {
+    setSelectedDebt(debt);
+    setPartialPaymentAmount('');
+    setPartialPaymentError('');
+    setIsPartialPaymentModalOpen(true);
+  };
+
+  const handleSubmitPartialPayment = async (e) => {
+    e.preventDefault();
+    if (!selectedDebt) return;
+
+    setIsSubmittingPartial(true);
+    setPartialPaymentError('');
+
+    try {
+      const paymentAmount = parseFloat(partialPaymentAmount);
+      if (isNaN(paymentAmount) || paymentAmount <= 0) {
+        setPartialPaymentError('الرجاء إدخال مبلغ صحيح للسداد');
+        setIsSubmittingPartial(false);
+        return;
+      }
+
+      const currentPaidAmount = selectedDebt.paidAmount || 0;
+      const newPaidAmount = currentPaidAmount + paymentAmount;
+      const remainingAmount = selectedDebt.amount - newPaidAmount;
+
+      // Validate payment doesn't exceed remaining amount
+      if (paymentAmount > remainingAmount) {
+        setPartialPaymentError(`المبلغ المدخل يتجاوز المبلغ المتبقي (${formatCurrency(remainingAmount, selectedDebt.currency)})`);
+        setIsSubmittingPartial(false);
+        return;
+      }
+
+      let newStatus = 'partial';
+      let finalPaidAmount = newPaidAmount;
+
+      if (remainingAmount <= 0.01) { // Allow small rounding differences
+        newStatus = 'paid';
+        finalPaidAmount = selectedDebt.amount;
+      }
+
+      await updateDebt(selectedDebt.id, {
+        paidAmount: finalPaidAmount,
+        status: newStatus,
+      });
+
+      // Close modal only on success
+      setIsPartialPaymentModalOpen(false);
+      setSelectedDebt(null);
+      setPartialPaymentAmount('');
+      setPartialPaymentError('');
+    } catch (error) {
+      console.error('Failed to record partial payment:', error);
+      const errorMessage = error.message || 'فشل في تسجيل السداد. الرجاء المحاولة مرة أخرى.';
+      setPartialPaymentError(errorMessage);
+    } finally {
+      setIsSubmittingPartial(false);
+    }
   };
 
   const handleDuplicate = (debt) => {
@@ -190,6 +296,7 @@ export default function Debts() {
       dueDate: debt.dueDate || '', // Keep the due date, user can change it
       status: 'pending', // Reset to pending for the duplicate
       notes: debt.notes || '',
+      paidAmount: 0, // Reset paid amount for duplicate
     });
     setIsModalOpen(true);
   };
@@ -305,6 +412,10 @@ export default function Debts() {
             const statusInfo = getStatusInfo(debt.status);
             const overdue = isOverdue(debt);
 
+            const paidAmount = debt.paidAmount || 0;
+            const remainingAmount = debt.amount - paidAmount;
+            const isPartiallyPaid = paidAmount > 0 && paidAmount < debt.amount;
+
             return (
               <Card
                 key={debt.id}
@@ -328,36 +439,62 @@ export default function Debts() {
                       )}
                     </div>
 
-                    <div className="flex flex-wrap gap-4 text-sm text-slate-400">
+                    <div className="flex flex-wrap gap-4 text-sm text-slate-400 mb-2">
                       {debt.dueDate && (
                         <div className="flex items-center gap-1">
                           <Calendar size={14} />
                           Due: {new Date(debt.dueDate).toLocaleDateString()}
                         </div>
                       )}
-                      {debt.notes && (
-                        <p className="text-slate-500">{debt.notes}</p>
+                      {isPartiallyPaid && (
+                        <div className="flex items-center gap-1 text-cyan-400">
+                          <Clock size={14} />
+                          Paid: {formatCurrency(paidAmount, debt.currency)} / {formatCurrency(debt.amount, debt.currency)}
+                        </div>
                       )}
                     </div>
+                    {debt.notes && (
+                      <p className="text-slate-500 text-sm">{debt.notes}</p>
+                    )}
                   </div>
 
                   <div className="text-right">
-                    <p
-                      className={`text-xl font-bold ${
-                        activeTab === 'owed_to_me' ? 'text-emerald-400' : 'text-red-400'
-                      }`}
-                    >
-                      <PrivacyValue value={formatCurrency(debt.amount, debt.currency)} />
-                    </p>
+                    <div>
+                      <p className="text-xs text-slate-400 mb-1">Total Amount</p>
+                      <p
+                        className={`text-xl font-bold ${
+                          activeTab === 'owed_to_me' ? 'text-emerald-400' : 'text-red-400'
+                        }`}
+                      >
+                        <PrivacyValue value={formatCurrency(debt.amount, debt.currency)} />
+                      </p>
+                      {isPartiallyPaid && (
+                        <>
+                          <p className="text-xs text-slate-400 mt-2 mb-1">Remaining</p>
+                          <p className="text-lg font-semibold text-amber-400">
+                            <PrivacyValue value={formatCurrency(remainingAmount, debt.currency)} />
+                          </p>
+                        </>
+                      )}
+                    </div>
                     <div className="flex gap-2 mt-3 justify-end">
                       {debt.status !== 'paid' && (
-                        <button
-                          onClick={() => handleMarkPaid(debt)}
-                          className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 transition-colors"
-                          title="Mark as paid"
-                        >
-                          <CheckCircle size={16} />
-                        </button>
+                        <>
+                          <button
+                            onClick={() => handlePartialPayment(debt)}
+                            className="p-2 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-400 transition-colors"
+                            title="سداد جزئي / Partial Payment"
+                          >
+                            <Clock size={16} />
+                          </button>
+                          <button
+                            onClick={() => handleMarkPaid(debt)}
+                            className="p-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-400 transition-colors"
+                            title="Mark as paid"
+                          >
+                            <CheckCircle size={16} />
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => openEditModal(debt)}
@@ -494,23 +631,100 @@ export default function Debts() {
           <Textarea
             label="Notes"
             value={formData.notes}
-            onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+            onChange={(e) => {
+              setFormData({ ...formData, notes: e.target.value });
+              setFormError(''); // Clear error when user types
+            }}
             placeholder="Any additional details..."
           />
 
+          {formError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-red-400 text-sm">
+              {formError}
+            </div>
+          )}
+
           <div className="flex gap-3 pt-4">
-            <Button type="submit" loading={isSubmitting} className="flex-1">
-              {editingDebt ? 'Update Entry' : 'Add Entry'}
+            <Button type="submit" loading={isSubmitting} className="flex-1" disabled={isSubmitting}>
+              {editingDebt ? 'تحديث / Update Entry' : 'إضافة / Add Entry'}
             </Button>
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setIsModalOpen(false)}
+              onClick={() => {
+                setIsModalOpen(false);
+                setFormError('');
+              }}
+              disabled={isSubmitting}
             >
-              Cancel
+              إلغاء / Cancel
             </Button>
           </div>
         </form>
+      </Modal>
+
+      {/* Partial Payment Modal */}
+      <Modal
+        isOpen={isPartialPaymentModalOpen}
+        onClose={() => {
+          setIsPartialPaymentModalOpen(false);
+          setSelectedDebt(null);
+          setPartialPaymentAmount('');
+        }}
+        title="سداد جزئي / Partial Payment"
+        size="md"
+      >
+        {selectedDebt && (
+          <form onSubmit={handleSubmitPartialPayment} className="space-y-4">
+            <div className="bg-white/5 rounded-lg p-4 space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Total Amount:</span>
+                <span className="font-semibold">{formatCurrency(selectedDebt.amount, selectedDebt.currency)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-slate-400">Already Paid:</span>
+                <span className="text-cyan-400">{formatCurrency(selectedDebt.paidAmount || 0, selectedDebt.currency)}</span>
+              </div>
+              <div className="flex justify-between text-sm border-t border-white/10 pt-2">
+                <span className="text-slate-400">Remaining:</span>
+                <span className="text-amber-400 font-semibold">
+                  {formatCurrency(selectedDebt.amount - (selectedDebt.paidAmount || 0), selectedDebt.currency)}
+                </span>
+              </div>
+            </div>
+
+            <Input
+              label="Payment Amount *"
+              type="number"
+              step="0.01"
+              min="0.01"
+              max={selectedDebt.amount - (selectedDebt.paidAmount || 0)}
+              value={partialPaymentAmount}
+              onChange={(e) => setPartialPaymentAmount(e.target.value)}
+              required
+              placeholder="Enter payment amount"
+            />
+
+            <div className="flex gap-3 pt-4">
+              <Button type="submit" loading={isSubmittingPartial} className="flex-1" disabled={isSubmittingPartial}>
+                تسجيل السداد / Record Payment
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setIsPartialPaymentModalOpen(false);
+                  setSelectedDebt(null);
+                  setPartialPaymentAmount('');
+                  setPartialPaymentError('');
+                }}
+                disabled={isSubmittingPartial}
+              >
+                إلغاء / Cancel
+              </Button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

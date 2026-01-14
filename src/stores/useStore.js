@@ -135,9 +135,21 @@ export const useDataStore = create((set, get) => ({
     }
   },
 
-  // Auto-save current data snapshot to file (Electron/Capacitor) or trigger download in browser
+  // Auto-save current data snapshot to file (Electron/Capacitor only - disabled in browser)
   autoSaveToFile: async () => {
     try {
+      // Check if we're in browser (not Electron or Capacitor)
+      const isElectron = !!(window.electron || (typeof window !== 'undefined' && window.process && window.process.type === 'renderer'));
+      const isCapacitor = !!(typeof window !== 'undefined' && window.Capacitor);
+      const isBrowser = !isElectron && !isCapacitor;
+      
+      // In browser, skip auto-save to file (IndexedDB is enough)
+      // Only save to file in Electron/Capacitor where we have file system access
+      if (isBrowser) {
+        // Silently skip - IndexedDB already has the data
+        return;
+      }
+      
       const fileStorageModule = await import('../services/storage/fileStorage.js');
       const fileStorage = fileStorageModule.default || fileStorageModule;
 

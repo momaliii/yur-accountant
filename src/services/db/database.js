@@ -242,6 +242,33 @@ db.version(15).stores({
   // No data migration needed for new table
 });
 
+// Migration to add paidAmount field to debts for partial payments
+db.version(16).stores({
+  clients: '++id, name, email, paymentModel, currency, rating, riskLevel, status, createdAt',
+  income: '++id, clientId, amount, currency, paymentMethod, receivedDate, isDeposit, isFixedPortionOnly, taxCategory, isTaxable, taxRate, createdAt',
+  expenses: '++id, clientId, amount, currency, category, date, isRecurring, taxCategory, isTaxDeductible, taxRate, parentRecurringId, createdAt',
+  debts: '++id, type, partyName, amount, currency, dueDate, status, paidAmount, createdAt',
+  goals: '++id, type, targetAmount, currentAmount, period, periodValue, category, createdAt, updatedAt',
+  invoices: '++id, clientId, invoiceNumber, amount, currency, issueDate, dueDate, status, items, notes, createdAt, updatedAt',
+  todos: '++id, listId, title, description, priority, category, dueDate, completed, isRecurring, recurrencePattern, createdAt, updatedAt',
+  lists: '++id, name, color, createdAt, updatedAt',
+  savings: '++id, name, type, currency, initialAmount, currentAmount, targetAmount, targetDate, interestRate, maturityDate, startDate, quantity, pricePerUnit, notes, createdAt, updatedAt',
+  savingsTransactions: '++id, savingsId, type, amount, currency, date, pricePerUnit, quantity, notes, createdAt',
+  openingBalances: '++id, [periodType+period], periodType, period, amount, currency, notes, createdAt, updatedAt',
+  expectedIncome: '++id, [clientId+period], clientId, period, expectedAmount, currency, notes, isPaid, createdAt, updatedAt',
+}).upgrade(async (tx) => {
+  // Initialize paidAmount to 0 for existing debts
+  await tx.debts.toCollection().modify((debt) => {
+    if (debt.paidAmount === undefined) {
+      debt.paidAmount = 0;
+    }
+    // Update status to partial if paidAmount > 0 but < amount
+    if (debt.paidAmount > 0 && debt.paidAmount < debt.amount && debt.status !== 'paid') {
+      debt.status = 'partial';
+    }
+  });
+});
+
 // Client operations
 export const clientsDB = {
   async getAll() {
@@ -816,12 +843,13 @@ export const backupDB = {
           delete transformed.id;
         }
         delete transformed._id;
-      } else if (transformed.id !== undefined) {
+      } else if (transformed.id !== undefined && transformed.id !== null) {
         // If id already exists (from backup), ensure it's a number
         if (typeof transformed.id === 'string' && !isNaN(Number(transformed.id))) {
           transformed.id = Number(transformed.id);
         }
         // If it's already a number, keep it as is
+        // Don't delete numeric IDs from backup files - they're needed for relationships
       }
       
       // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
@@ -1027,11 +1055,31 @@ export const backupDB = {
         for (let i = 0; i < uniqueItems.length; i++) {
           const item = uniqueItems[i];
           try {
-            // Remove id to let IndexedDB auto-increment handle it
-            // This prevents conflicts with ++id
             const newItem = { ...item };
-            delete newItem.id;
-            await store.add(newItem);
+            
+            // Preserve numeric IDs from backup files
+            // If id is a number, keep it (from backup file)
+            // If id is undefined/null, let IndexedDB auto-generate
+            // If id is a string or other type, remove it to let IndexedDB auto-generate
+            if (newItem.id !== undefined && newItem.id !== null) {
+              if (typeof newItem.id === 'number') {
+                // Keep numeric ID from backup file
+                // Use put() instead of add() to preserve the ID
+                await store.put(newItem);
+              } else if (typeof newItem.id === 'string' && !isNaN(Number(newItem.id))) {
+                // Convert numeric string to number and keep it
+                newItem.id = Number(newItem.id);
+                await store.put(newItem);
+              } else {
+                // Remove non-numeric ID to let IndexedDB auto-generate
+                delete newItem.id;
+                await store.add(newItem);
+              }
+            } else {
+              // No ID - let IndexedDB auto-generate
+              delete newItem.id;
+              await store.add(newItem);
+            }
             count++;
           } catch (err) {
             errorCount++;

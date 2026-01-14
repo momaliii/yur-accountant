@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Menu, shell, ipcMain } from 'electron';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, mkdir } from 'fs';
+import { promises as fs } from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -173,6 +174,44 @@ function createWindow() {
     setTimeout(() => {
       closeSplashAndShowMain();
     }, 500);
+  });
+
+  // File system IPC handlers
+  ipcMain.handle('get-path', async (event, name) => {
+    return app.getPath(name || 'userData');
+  });
+
+  ipcMain.handle('read-file', async (event, filePath, encoding = 'utf8') => {
+    try {
+      const data = await fs.readFile(filePath, encoding);
+      return data;
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        return null; // File doesn't exist
+      }
+      throw error;
+    }
+  });
+
+  ipcMain.handle('write-file', async (event, filePath, data, encoding = 'utf8') => {
+    try {
+      // Ensure directory exists
+      const dir = dirname(filePath);
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(filePath, data, encoding);
+      return true;
+    } catch (error) {
+      throw error;
+    }
+  });
+
+  ipcMain.handle('mkdir', async (event, dirPath, options = {}) => {
+    try {
+      await fs.mkdir(dirPath, { recursive: true, ...options });
+      return true;
+    } catch (error) {
+      throw error;
+    }
   });
 
   // Show window when ready to prevent visual flash

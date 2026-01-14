@@ -205,11 +205,13 @@ export default function Income() {
 
       setIsModalOpen(false);
       setFormData(initialFormState);
+      setEditingIncome(null);
     } catch (error) {
       console.error('Failed to save income:', error);
+      alert('Failed to save income. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
-
-    setIsSubmitting(false);
   };
 
   const handleDelete = async (incomeItem) => {
@@ -222,7 +224,9 @@ export default function Income() {
     currencyService.formatCurrency(amount, currency || baseCurrency);
 
   const getClientName = (clientId) => {
-    const client = clients.find((c) => c.id === clientId);
+    if (!clientId) return 'No client';
+    // Handle both string and number IDs
+    const client = clients.find((c) => c.id === clientId || c.id === parseInt(clientId) || String(c.id) === String(clientId));
     return client?.name || 'Unknown Client';
   };
 

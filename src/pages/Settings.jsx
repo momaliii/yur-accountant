@@ -149,10 +149,16 @@ export default function Settings() {
       console.log('Sample client (first item):', data.clients?.[0]);
       console.log('Sample income (first item):', data.income?.[0]);
       
-      // Validate that we actually have data
-      if (!data.clients || data.clients.length === 0) {
-        console.error('ERROR: No clients in backup file!');
-        throw new Error('Backup file appears to be empty or invalid. No clients found.');
+      // Validate that we actually have data (at least one category should have data)
+      const hasData = (data.clients && data.clients.length > 0) ||
+                     (data.income && data.income.length > 0) ||
+                     (data.expenses && data.expenses.length > 0) ||
+                     (data.debts && data.debts.length > 0) ||
+                     (data.goals && data.goals.length > 0);
+      
+      if (!hasData) {
+        console.error('ERROR: No data in backup file!');
+        throw new Error('Backup file appears to be empty or invalid. No data found.');
       }
       
       // Validate data structure
@@ -192,6 +198,11 @@ export default function Settings() {
       
       await backupDB.importAll(dataCopy);
       console.log('Import completed successfully');
+      
+      // Reload data from IndexedDB to ensure it's displayed
+      const { initializeData } = useDataStore.getState();
+      await initializeData();
+      console.log('Data reinitialized after import');
       
       // Show success message
       setSaveStatus('import');

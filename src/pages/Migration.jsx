@@ -164,10 +164,11 @@ export default function Migration() {
       await loadLocalDataStats();
       await initializeData();
       
-      // Show success message
+      // Show success message and reload page to ensure data is displayed
+      setSuccess('Backup restored successfully! All data has been imported. Reloading page...');
       setTimeout(() => {
-        setSuccess('Backup restored successfully! All data has been imported.');
-      }, 500);
+        window.location.reload();
+      }, 1000);
     } catch (error) {
       console.error('Restore error:', error);
       setError('Failed to restore backup: ' + (error.message || 'Unknown error'));
@@ -292,6 +293,16 @@ export default function Migration() {
             </Button>
           </label>
         </div>
+        {success && (
+          <div className="mt-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">
+            {success}
+          </div>
+        )}
+        {error && (
+          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {error}
+          </div>
+        )}
       </Card>
 
       {/* Delete All Local Data Section */}
