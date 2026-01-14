@@ -1344,6 +1344,14 @@ export const backupDB = {
       if (importCounts.income > 0 && verifyCounts.income !== importCounts.income) {
         console.warn(`Income count mismatch: imported ${importCounts.income}, found ${verifyCounts.income}`);
       }
+      
+      // Return import results
+      return {
+        success: true,
+        counts: importCounts,
+        verifiedCounts: verifyCounts,
+        totalImported
+      };
     });
   },
   

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Upload, Download, CheckCircle2, XCircle, Loader2, Database, Cloud, Trash2, FileUp } from 'lucide-react';
 import Card from '../components/ui/Card';
 import Button from '../components/ui/Button';
-import { backupDB } from '../services/db/database';
+import { backupDB, clientsDB, incomeDB, expensesDB } from '../services/db/database';
 import migrationAPI from '../services/api/migration';
 import { useAuthStore } from '../stores/authStore';
 import { useDataStore } from '../stores/useStore';
@@ -152,12 +152,31 @@ export default function Migration() {
         expenses: data.expenses?.length || 0,
         debts: data.debts?.length || 0,
         goals: data.goals?.length || 0,
+        savings: data.savings?.length || 0,
+        expectedIncome: data.expectedIncome?.length || 0,
       });
 
       // Import the backup data
-      await backupDB.importAll(data);
+      const importResult = await backupDB.importAll(data);
+      console.log('Backup import result:', importResult);
       
-      console.log('Backup import completed');
+      // Wait a bit to ensure IndexedDB transaction is fully committed
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Verify data was imported by checking IndexedDB
+      const importedClients = await clientsDB.getAll();
+      const importedIncome = await incomeDB.getAll();
+      const importedExpenses = await expensesDB.getAll();
+      
+      console.log('Verification after import:', {
+        clients: importedClients.length,
+        income: importedIncome.length,
+        expenses: importedExpenses.length,
+      });
+      
+      if (importedClients.length === 0 && importedIncome.length === 0 && importedExpenses.length === 0) {
+        throw new Error('Import completed but no data was found in database. Please check the backup file format.');
+      }
       
       setSuccess('Backup restored successfully! Refreshing data...');
       
@@ -165,18 +184,28 @@ export default function Migration() {
       await loadLocalDataStats();
       await initializeData();
       
+      // Verify data is in store
+      const storeData = useDataStore.getState();
+      console.log('Store data after initialize:', {
+        clients: storeData.clients.length,
+        income: storeData.income.length,
+        expenses: storeData.expenses.length,
+      });
+      
       // Show success message and reload page to ensure data is displayed
-      setSuccess('Backup restored successfully! All data has been imported. Reloading page...');
+      setSuccess(`Backup restored successfully! Imported: ${importedClients.length} clients, ${importedIncome.length} income records, ${importedExpenses.length} expenses. Reloading page...`);
       setTimeout(() => {
         window.location.reload();
-      }, 1000);
+      }, 1500);
     } catch (error) {
       console.error('Restore error:', error);
       setError('Failed to restore backup: ' + (error.message || 'Unknown error'));
     } finally {
       setIsRestoring(false);
       // Reset file input
-      event.target.value = '';
+      if (event.target) {
+        event.target.value = '';
+      }
     }
   };
 
