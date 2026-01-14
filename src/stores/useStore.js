@@ -76,66 +76,6 @@ export const useDataStore = create((set, get) => ({
   
   // Processing lock for recurring expenses
   isProcessingRecurring: false,
-  
-  // Sync state
-  syncStatus: {
-    isSyncing: false,
-    lastSyncTime: null,
-  },
-
-  // Helper to sync to API (MongoDB) in background
-  syncToAPI: async (entity, operation, data) => {
-    try {
-      // If user is not authenticated, skip cloud sync (local IndexedDB + file only)
-      if (!authService.isAuthenticated()) {
-        return null;
-      }
-
-      // Lazy load syncService to avoid circular deps / heavy imports on startup
-      const syncServiceModule = await import('../services/sync/syncService.js');
-      const syncService = syncServiceModule.default || syncServiceModule;
-
-      const operationPayload = {
-        entity,
-        type: operation, // 'create' | 'update' | 'delete'
-      };
-
-      // Prefer mongoId (ObjectId string from server) if available, otherwise fall back to local id
-      const itemId = data?.mongoId || data?._id || data?.id;
-
-      if (operation === 'create') {
-        operationPayload.data = data;
-      } else if (operation === 'update') {
-        if (!itemId) {
-          // No server id yet – queue a full create instead on next full sync
-          operationPayload.type = 'create';
-          operationPayload.data = data;
-        } else {
-          operationPayload.id = itemId;
-          operationPayload.data = data;
-        }
-      } else if (operation === 'delete') {
-        if (!itemId) {
-          // Nothing to delete on server if we don't know its id
-          return null;
-        }
-        operationPayload.id = itemId;
-      }
-
-      // Queue operation and try to process immediately in background
-      syncService.queueOperation(operationPayload);
-      // Process queue in background (fire-and-forget); errors are handled inside syncService
-      syncService.processQueue().catch(error => {
-        console.error('Error processing sync queue:', error);
-      });
-
-      return true;
-    } catch (error) {
-      // Never break the UI or local save because of sync issues
-      console.error('syncToAPI error:', error);
-      return null;
-    }
-  },
 
   // Auto-save current data snapshot to file (Electron/Capacitor only - disabled in browser)
   autoSaveToFile: async () => {
@@ -225,9 +165,6 @@ export const useDataStore = create((set, get) => ({
       const newClient = { ...client, id };
       set((state) => ({ clients: [...state.clients, newClient] }));
 
-      // Sync to cloud (background) and auto-save to file
-      get().syncToAPI('client', 'create', newClient);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -248,9 +185,6 @@ export const useDataStore = create((set, get) => ({
         clients: state.clients.map((c) => (c.id === id ? updated : c)),
       }));
 
-      // Sync to cloud
-      get().syncToAPI('client', 'update', updated);
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -267,11 +201,6 @@ export const useDataStore = create((set, get) => ({
         clients: state.clients.filter((c) => c.id !== id),
       }));
       
-      // Sync delete to cloud (if we know about it)
-      if (existing) {
-        get().syncToAPI('client', 'delete', existing);
-      }
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -287,9 +216,6 @@ export const useDataStore = create((set, get) => ({
       const newIncome = { ...income, id };
       set((state) => ({ income: [newIncome, ...state.income] }));
 
-      // Sync to cloud
-      get().syncToAPI('income', 'create', newIncome);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -310,9 +236,6 @@ export const useDataStore = create((set, get) => ({
         income: state.income.map((i) => (i.id === id ? updated : i)),
       }));
 
-      // Sync to cloud
-      get().syncToAPI('income', 'update', updated);
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -328,11 +251,6 @@ export const useDataStore = create((set, get) => ({
       set((state) => ({
         income: state.income.filter((i) => i.id !== id),
       }));
-      
-      if (existing) {
-        get().syncToAPI('income', 'delete', existing);
-      }
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -348,9 +266,6 @@ export const useDataStore = create((set, get) => ({
       const newExpense = { ...expense, id };
       set((state) => ({ expenses: [newExpense, ...state.expenses] }));
 
-      // Sync to cloud
-      get().syncToAPI('expense', 'create', newExpense);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -371,9 +286,6 @@ export const useDataStore = create((set, get) => ({
         expenses: state.expenses.map((e) => (e.id === id ? updated : e)),
       }));
 
-      // Sync to cloud
-      get().syncToAPI('expense', 'update', updated);
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -389,11 +301,6 @@ export const useDataStore = create((set, get) => ({
       set((state) => ({
         expenses: state.expenses.filter((e) => e.id !== id),
       }));
-      
-      if (existing) {
-        get().syncToAPI('expense', 'delete', existing);
-      }
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -645,9 +552,6 @@ export const useDataStore = create((set, get) => ({
       const newDebt = { ...debt, id };
       set((state) => ({ debts: [...state.debts, newDebt] }));
 
-      // Sync to cloud
-      get().syncToAPI('debt', 'create', newDebt);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -668,8 +572,6 @@ export const useDataStore = create((set, get) => ({
         debts: state.debts.map((d) => (d.id === id ? updated : d)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('debt', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -686,10 +588,6 @@ export const useDataStore = create((set, get) => ({
         debts: state.debts.filter((d) => d.id !== id),
       }));
       
-      // Sync to API in background
-      if (debt) {
-        get().syncToAPI('debt', 'delete', debt);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -705,9 +603,6 @@ export const useDataStore = create((set, get) => ({
       const newGoal = { ...goal, id, currentAmount: 0 };
       set((state) => ({ goals: [...state.goals, newGoal] }));
 
-      // Sync to cloud
-      get().syncToAPI('goal', 'create', newGoal);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -728,8 +623,6 @@ export const useDataStore = create((set, get) => ({
         goals: state.goals.map((g) => (g.id === id ? updated : g)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('goal', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -746,10 +639,6 @@ export const useDataStore = create((set, get) => ({
         goals: state.goals.filter((g) => g.id !== id),
       }));
       
-      // Sync to API in background
-      if (goal) {
-        get().syncToAPI('goal', 'delete', goal);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -766,8 +655,6 @@ export const useDataStore = create((set, get) => ({
       set((state) => ({
         goals: state.goals.map((g) => (g.id === id ? updated : g)),
       }));
-      
-      get().syncToAPI('goal', 'update', updated);
       
       // Auto-save to file
       get().autoSaveToFile();
@@ -788,8 +675,6 @@ export const useDataStore = create((set, get) => ({
       const newInvoice = { ...invoice, id };
       set((state) => ({ invoices: [newInvoice, ...state.invoices] }));
       
-      // Sync to API in background and update with mongoId from server response
-      get().syncToAPI('invoice', 'create', newInvoice);
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -810,8 +695,6 @@ export const useDataStore = create((set, get) => ({
         invoices: state.invoices.map((inv) => (inv.id === id ? updated : inv)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('invoice', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -828,10 +711,6 @@ export const useDataStore = create((set, get) => ({
         invoices: state.invoices.filter((inv) => inv.id !== id),
       }));
       
-      // Sync to API in background
-      if (invoice) {
-        get().syncToAPI('invoice', 'delete', invoice);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -847,9 +726,6 @@ export const useDataStore = create((set, get) => ({
       const newTodo = { ...todo, id };
       set((state) => ({ todos: [...state.todos, newTodo] }));
 
-      // Sync to cloud
-      get().syncToAPI('todo', 'create', newTodo);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -870,8 +746,6 @@ export const useDataStore = create((set, get) => ({
         todos: state.todos.map((t) => (t.id === id ? updated : t)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('todo', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -888,10 +762,6 @@ export const useDataStore = create((set, get) => ({
         todos: state.todos.filter((t) => t.id !== id),
       }));
       
-      // Sync to API in background
-      if (todo) {
-        get().syncToAPI('todo', 'delete', todo);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -929,8 +799,6 @@ export const useDataStore = create((set, get) => ({
         todos: state.todos.map((t) => (t.id === id ? { ...t, completed: newCompleted } : t)),
       }));
       
-      get().syncToAPI('todo', 'update', { ...todo, completed: newCompleted, id });
-      
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -946,9 +814,6 @@ export const useDataStore = create((set, get) => ({
       const newList = { ...list, id };
       set((state) => ({ lists: [...state.lists, newList] }));
 
-      // Sync to cloud
-      get().syncToAPI('list', 'create', newList);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -969,8 +834,6 @@ export const useDataStore = create((set, get) => ({
         lists: state.lists.map((l) => (l.id === id ? updated : l)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('list', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -987,10 +850,6 @@ export const useDataStore = create((set, get) => ({
         lists: state.lists.filter((l) => l.id !== id),
       }));
       
-      // Sync to API in background
-      if (list) {
-        get().syncToAPI('list', 'delete', list);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1006,9 +865,6 @@ export const useDataStore = create((set, get) => ({
       const newSavings = { ...savings, id };
       set((state) => ({ savings: [...state.savings, newSavings] }));
 
-      // Sync to cloud
-      get().syncToAPI('saving', 'create', newSavings);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -1029,8 +885,6 @@ export const useDataStore = create((set, get) => ({
         savings: state.savings.map((s) => (s.id === id ? updated : s)),
       }));
       
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('saving', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1048,10 +902,6 @@ export const useDataStore = create((set, get) => ({
         savingsTransactions: state.savingsTransactions.filter((t) => t.savingsId !== id),
       }));
       
-      // Sync to API in background
-      if (saving) {
-        get().syncToAPI('saving', 'delete', saving);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1090,9 +940,6 @@ export const useDataStore = create((set, get) => ({
         });
       }
       
-      // Sync to cloud
-      get().syncToAPI('savingsTransaction', 'create', newTransaction);
-
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -1143,8 +990,6 @@ export const useDataStore = create((set, get) => ({
         }
       }
       
-      // Sync to API in background
-      get().syncToAPI('savingsTransaction', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1186,10 +1031,6 @@ export const useDataStore = create((set, get) => ({
         }
       }
       
-      // Sync to API in background
-      if (transaction) {
-        get().syncToAPI('savingsTransaction', 'delete', transaction);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1252,9 +1093,6 @@ export const useDataStore = create((set, get) => ({
       set({ openingBalances: updatedBalances });
       
       // Find the just-upserted balance to sync
-      const savedBalance = updatedBalances.find((b) => b.id === id) || balance;
-      get().syncToAPI('openingBalance', 'update', savedBalance);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -1274,8 +1112,6 @@ export const useDataStore = create((set, get) => ({
       // Get the full opening balance object to include mongoId for syncing
       const balance = updatedBalances.find((b) => b.id === id);
       const updated = { ...balance, ...changes, id };
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('openingBalance', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1292,10 +1128,6 @@ export const useDataStore = create((set, get) => ({
         openingBalances: state.openingBalances.filter((b) => b.id !== id),
       }));
       
-      // Sync to API in background
-      if (balance) {
-        get().syncToAPI('openingBalance', 'delete', balance);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1317,9 +1149,6 @@ export const useDataStore = create((set, get) => ({
       const updatedExpectedIncome = await expectedIncomeDB.getAll();
       set({ expectedIncome: updatedExpectedIncome });
       
-      const saved = updatedExpectedIncome.find((ei) => ei.id === id) || expectedIncome;
-      get().syncToAPI('expectedIncome', 'update', saved);
-      
       // Auto-save to file
       get().autoSaveToFile();
       
@@ -1339,8 +1168,6 @@ export const useDataStore = create((set, get) => ({
       // Get the full expected income object to include mongoId for syncing
       const expectedIncome = updatedExpectedIncome.find((ei) => ei.id === id);
       const updated = { ...expectedIncome, ...changes, id };
-      // Sync to API in background (includes mongoId if available)
-      get().syncToAPI('expectedIncome', 'update', updated);
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {
@@ -1357,10 +1184,6 @@ export const useDataStore = create((set, get) => ({
         expectedIncome: state.expectedIncome.filter((ei) => ei.id !== id),
       }));
       
-      // Sync to API in background
-      if (existing) {
-        get().syncToAPI('expectedIncome', 'delete', existing);
-      }
       // Auto-save to file
       get().autoSaveToFile();
     } catch (error) {

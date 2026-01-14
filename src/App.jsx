@@ -8,7 +8,6 @@ import UpdateChecker from './components/UpdateChecker';
 import { useDataStore, useSettingsStore } from './stores/useStore';
 import { useAuthStore } from './stores/authStore';
 import currencyService from './services/currency/currencyService';
-import syncService from './services/sync/syncService';
 import fileStorage from './services/storage/fileStorage.js';
 
 // Lazy load heavy components
@@ -58,7 +57,6 @@ export default function App() {
   const { exchangeRates, setExchangeRates, lastRateUpdate, hasSeenOnboarding } = useSettingsStore();
   const { initialize: initializeAuth, isAuthenticated } = useAuthStore();
   const [showOnboarding, setShowOnboarding] = useState(!hasSeenOnboarding);
-  const [hasSynced, setHasSynced] = useState(false);
 
   useEffect(() => {
     initializeAuth();
@@ -187,60 +185,11 @@ export default function App() {
     initApp();
   }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates]);
   
-  // Automatic sync from server on login (multi-device support)
-  useEffect(() => {
-    const syncOnLogin = async () => {
-      if (!isAuthenticated || hasSynced) return;
-
-      try {
-        // Get current user from auth store
-        const { useAuthStore } = await import('./stores/authStore.js');
-        const currentUser = useAuthStore.getState().user;
-        const currentUserId = currentUser?.id || currentUser?._id;
-        
-        // Check if this is a different user than before (stored in localStorage)
-        const lastUserId = localStorage.getItem('lastUserId');
-        
-        if (lastUserId && lastUserId !== currentUserId) {
-          // Different user logged in - clear local data to prevent mixing
-          console.log('Different user detected, clearing local data...');
-          const { backupDB } = await import('./services/db/database.js');
-          await backupDB.clearAll();
-          console.log('Local data cleared for new user');
-        }
-        
-        // Store current user ID
-        if (currentUserId) {
-          localStorage.setItem('lastUserId', currentUserId);
-        }
-        
-        // First, process any pending sync queue operations to ensure local changes are synced
-        console.log('Processing pending sync queue...');
-        await syncService.processQueue();
-        
-        // Then sync from server
-        console.log('Syncing data from server after login...');
-        const result = await syncService.syncFromServer();
-        if (result?.success) {
-          console.log('Server sync successful, reloading local data from IndexedDB...');
-          await initializeData();
-        } else {
-          console.warn('Server sync failed or returned no data:', result?.error);
-        }
-      } catch (error) {
-        console.error('Error during login sync from server:', error);
-      } finally {
-        setHasSynced(true);
-      }
-    };
-
-    syncOnLogin();
-  }, [isAuthenticated, hasSynced, initializeData]);
-  
-  // Reset sync flag when authentication state changes
+  // Clear local data when user logs out
   useEffect(() => {
     if (!isAuthenticated) {
-      setHasSynced(false);
+      // Clear last user ID when logged out
+      localStorage.removeItem('lastUserId');
     }
   }, [isAuthenticated]);
 
