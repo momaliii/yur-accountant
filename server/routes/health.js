@@ -32,12 +32,15 @@ export default async function healthRoutes(fastify, options) {
     }
   });
 
-  // Database statistics (admin only)
+  // Database statistics (admin only) - Supabase version
   fastify.get('/health/database', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
-      const { getDBStats } = await import('../config/database.js');
-      const stats = await getDBStats();
-      return stats;
+      // MongoDB removed - using Supabase now
+      // Database stats for Supabase not implemented yet
+      return {
+        message: 'Using Supabase - database stats not available',
+        provider: 'supabase',
+      };
     } catch (error) {
       fastify.log.error(error);
       return reply.code(500).send({ error: 'Failed to get database stats' });

@@ -3,8 +3,10 @@ import os from 'os';
 // Get system health metrics
 export async function getSystemHealth() {
   try {
-    const { getDBStats } = await import('../config/database.js');
-    const dbStats = await getDBStats();
+    // MongoDB removed - using Supabase now
+    // const { getDBStats } = await import('../config/database.js');
+    // const dbStats = await getDBStats();
+    const dbStats = null; // Supabase stats not implemented yet
     const cpuUsage = process.cpuUsage();
     const memUsage = process.memoryUsage();
     const totalMem = os.totalmem();
