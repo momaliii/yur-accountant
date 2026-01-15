@@ -137,9 +137,11 @@ A comprehensive financial dashboard for media buyers to track income, expenses, 
 
 ### Privacy & Security
 - **Privacy Mode**: Toggle to blur/hide sensitive financial data when viewing in public
-- All data stored locally in your browser (IndexedDB)
-- No data sent to external servers (except OpenAI API for AI features)
-- Export/Import functionality for backups
+- **Local-First Architecture**: All data stored locally in your browser (IndexedDB) for fast access
+- **Cloud Sync**: Optional Supabase sync for multi-device access and backup
+- **Offline Support**: Full functionality works offline, syncs when online
+- **Export/Import**: Backup and restore functionality
+- **Secure Authentication**: Supabase Auth with JWT tokens
 
 ### Help Center
 - Built-in help documentation
@@ -162,7 +164,10 @@ A comprehensive financial dashboard for media buyers to track income, expenses, 
 - **Styling**: Tailwind CSS
 - **Charts**: Recharts
 - **State Management**: Zustand with persistence
-- **Database**: IndexedDB (Dexie.js) - all data stored locally
+- **Local Database**: IndexedDB (Dexie.js) - for fast offline access
+- **Online Database**: Supabase (PostgreSQL) - for cloud sync and multi-device access
+- **Backend**: Fastify (Node.js) - hosted on Railway
+- **Authentication**: Supabase Auth
 - **AI**: OpenAI API (optional, user provides key)
 - **Currency**: Exchange Rate API (exchangerate-api.com)
 - **Icons**: Lucide React
@@ -190,6 +195,8 @@ npm run preview
 ```
 
 The web app will be available at `http://localhost:5173`
+
+**Note:** For cloud sync functionality, you'll need to set up Supabase environment variables. See [FRONTEND_ENV_SETUP.md](FRONTEND_ENV_SETUP.md) for instructions.
 
 ### Desktop Application
 
@@ -305,6 +312,23 @@ For detailed mobile setup instructions, see:
 
 ### Configuration
 
+#### Environment Variables (Frontend)
+
+Create a `.env` file in the root directory:
+
+```env
+# Supabase Configuration (Required for online sync)
+VITE_SUPABASE_URL=your_supabase_project_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+
+# API URL (Backend server)
+VITE_API_URL=https://web-production-9522e.up.railway.app/api
+```
+
+See [FRONTEND_ENV_SETUP.md](FRONTEND_ENV_SETUP.md) for detailed setup instructions.
+
+#### App Settings
+
 1. Open the app and go to **Settings**
 2. (Optional) Add your OpenAI API key for AI features:
    - Get your API key from [OpenAI](https://platform.openai.com/api-keys)
@@ -312,22 +336,45 @@ For detailed mobile setup instructions, see:
    - AI features will be enabled automatically
 3. Set your preferred base currency (EGP, USD, EUR, SAR, AED)
 4. Configure Vodafone Cash fee percentage (default: 1.5%)
+5. Enable periodic sync (optional) for automatic cloud synchronization
 
 ## Data Storage
 
-All data is stored locally in your browser using IndexedDB. This means:
-- ✅ Your data never leaves your device
-- ✅ No account or login required
-- ✅ Works offline after initial load
-- ✅ You can export/import data for backup
+### Local Storage (IndexedDB)
+
+All data is stored locally in your browser using IndexedDB for fast access:
+- ✅ Instant data access (no network delay)
+- ✅ Works completely offline
 - ✅ Privacy-first approach
+- ✅ No account required for local-only usage
+
+### Cloud Sync (Supabase) - Optional
+
+For multi-device access and automatic backups, enable Supabase sync:
+- ✅ Access your data from any device
+- ✅ Automatic sync across devices
+- ✅ Secure cloud backup
+- ✅ Conflict resolution for concurrent edits
+- ✅ Periodic sync (configurable interval)
+- ✅ Offline queue - changes sync when connection restored
+
+**Setup Instructions:**
+1. Create a Supabase project at [supabase.com](https://supabase.com)
+2. Run the SQL script from `server/supabase_tables.sql` in Supabase SQL Editor
+3. Add Supabase credentials to `.env` file (see [FRONTEND_ENV_SETUP.md](FRONTEND_ENV_SETUP.md))
+4. Restart the development server
 
 ### Backup & Restore
 
+**Manual Backup:**
 1. Go to **Settings**
 2. Click **Export Data** to download a JSON backup
 3. Click **Import Data** to restore from a backup file
-4. Your data is automatically saved as you work
+
+**Automatic Backup (with Supabase):**
+- Data automatically syncs to cloud
+- Access from any device with your account
+- No manual backup needed
 
 ## Usage Guide
 
@@ -474,13 +521,28 @@ All data is stored locally in your browser using IndexedDB. This means:
 
 ## Privacy & Security
 
-- All financial data is stored locally in your browser
-- No data is sent to external servers (except OpenAI API when using AI features)
-- Privacy mode allows you to blur sensitive data when viewing in public
-- Export/Import functionality for your own backups
-- No tracking, no analytics, no third-party data collection
+- **Local-First**: All financial data stored locally in your browser (IndexedDB)
+- **Optional Cloud Sync**: Data only syncs to Supabase if you enable it
+- **Secure Authentication**: Supabase Auth with JWT tokens
+- **Encrypted Connections**: All API calls use HTTPS
+- **Privacy Mode**: Toggle to blur sensitive data when viewing in public
+- **Export/Import**: Manual backup functionality available
+- **No Tracking**: No analytics, no third-party data collection
+- **OpenAI API**: Only used when you explicitly enable AI features (optional)
 
 ## Troubleshooting
+
+### Supabase Sync Not Working
+- Ensure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set in `.env`
+- Restart development server after adding environment variables
+- Check Supabase project is active and tables are created
+- See [FRONTEND_ENV_SETUP.md](FRONTEND_ENV_SETUP.md) for detailed setup
+
+### Login/Authentication Issues
+- Verify `VITE_API_URL` is correctly set in `.env`
+- Check Railway server is running and accessible
+- Ensure CORS is configured on Railway (see [FIX_CORS_ERROR.md](FIX_CORS_ERROR.md))
+- See [FIX_LOGIN_ERROR.md](FIX_LOGIN_ERROR.md) for detailed troubleshooting
 
 ### AI Features Not Working
 - Ensure OpenAI API key is set in Settings
@@ -491,11 +553,23 @@ All data is stored locally in your browser using IndexedDB. This means:
 - Check browser supports IndexedDB
 - Try clearing browser cache and reloading
 - Export your data as backup before troubleshooting
+- If using Supabase sync, check sync status in console
 
 ### Currency Rates Not Updating
 - Rates update automatically every 24 hours
 - Manual refresh available in Settings
 - Check internet connection
+
+## Additional Documentation
+
+- [Frontend Environment Setup](FRONTEND_ENV_SETUP.md) - Configure Supabase for cloud sync
+- [Supabase Setup Guide](ONLINE_STORAGE_GUIDE.md) - Detailed Supabase setup instructions
+- [Create Admin Account](CREATE_ADMIN_SUPABASE.md) - How to create admin users
+- [Get Supabase Keys](GET_SUPABASE_KEYS_V2.md) - How to get Supabase API keys
+- [Fix Login Errors](FIX_LOGIN_ERROR.md) - Troubleshoot authentication issues
+- [Fix CORS Errors](FIX_CORS_ERROR.md) - Resolve CORS configuration
+- [Railway Setup](RAILWAY_SETUP.md) - Backend server configuration
+- [Mobile Setup Guide](MOBILE_SETUP.md) - Build mobile applications
 
 ## Contributing
 
