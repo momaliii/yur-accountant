@@ -819,55 +819,86 @@ export const backupDB = {
     }
     
     // Helper function to transform document to IndexedDB format
-    // Handles backup file format (numeric id)
+    // Handles both MongoDB format (_id) and IndexedDB backup format (numeric id)
     const transformDoc = (doc) => {
       if (!doc) return doc;
       const transformed = { ...doc };
       
-      // Remove _id if it exists (from old MongoDB format)
+      // Transform _id to id (MongoDB uses _id, IndexedDB uses id)
       if (transformed._id) {
+        // MongoDB _id can be ObjectId or string
+        // Store MongoDB _id as mongoId for syncing updates back to server
+        const mongoId = typeof transformed._id === 'object' 
+          ? transformed._id.toString() 
+          : transformed._id.toString();
+        transformed.mongoId = mongoId;
+        
+        // For IndexedDB with ++id, we'll let it auto-generate, so remove the id
+        // But keep it for backup files that have numeric IDs
+        if (typeof transformed._id === 'number') {
+          // Numeric ID from backup file - keep it
+          transformed.id = transformed._id;
+        } else {
+          // MongoDB ObjectId or string - remove id to let IndexedDB auto-generate
+          delete transformed.id;
+        }
         delete transformed._id;
-      }
-      
-      // Remove mongoId if it exists (from old sync format)
-      if (transformed.mongoId) {
-        delete transformed.mongoId;
-      }
-      
-      // If id exists (from backup), ensure it's a number
-      if (transformed.id !== undefined && transformed.id !== null) {
+      } else if (transformed.id !== undefined && transformed.id !== null) {
+        // If id already exists (from backup), ensure it's a number
         if (typeof transformed.id === 'string' && !isNaN(Number(transformed.id))) {
           transformed.id = Number(transformed.id);
         }
         // If it's already a number, keep it as is
-        // Numeric IDs from backup files are needed for relationships
+        // Don't delete numeric IDs from backup files - they're needed for relationships
       }
       
-      // Transform nested references (clientId, listId, savingsId, etc.)
+      // Transform nested ObjectId references (clientId, listId, savingsId, etc.)
+      // Handle both ObjectId objects and numeric IDs from backups
       // Keep numeric IDs as numbers for IndexedDB compatibility
       if (transformed.clientId !== null && transformed.clientId !== undefined) {
+        if (typeof transformed.clientId === 'object' && transformed.clientId._id) {
+          transformed.clientId = transformed.clientId._id.toString();
+        } else if (typeof transformed.clientId === 'object') {
+          transformed.clientId = transformed.clientId.toString();
+        }
+        // If it's a number (from backup), keep it as number
         // If it's a numeric string, convert to number for consistency
-        if (typeof transformed.clientId === 'string' && !isNaN(Number(transformed.clientId))) {
+        else if (typeof transformed.clientId === 'string' && !isNaN(Number(transformed.clientId))) {
           transformed.clientId = Number(transformed.clientId);
         }
-        // Otherwise keep as is (number)
+        // Otherwise keep as is (number or string)
       }
       
       if (transformed.listId !== null && transformed.listId !== undefined) {
-        if (typeof transformed.listId === 'string' && !isNaN(Number(transformed.listId))) {
+        if (typeof transformed.listId === 'object' && transformed.listId._id) {
+          transformed.listId = transformed.listId._id.toString();
+        } else if (typeof transformed.listId === 'object') {
+          transformed.listId = transformed.listId.toString();
+        }
+        else if (typeof transformed.listId === 'string' && !isNaN(Number(transformed.listId))) {
           transformed.listId = Number(transformed.listId);
         }
       }
       
       if (transformed.savingsId !== null && transformed.savingsId !== undefined) {
-        if (typeof transformed.savingsId === 'string' && !isNaN(Number(transformed.savingsId))) {
+        if (typeof transformed.savingsId === 'object' && transformed.savingsId._id) {
+          transformed.savingsId = transformed.savingsId._id.toString();
+        } else if (typeof transformed.savingsId === 'object') {
+          transformed.savingsId = transformed.savingsId.toString();
+        }
+        else if (typeof transformed.savingsId === 'string' && !isNaN(Number(transformed.savingsId))) {
           transformed.savingsId = Number(transformed.savingsId);
         }
       }
       
       if (transformed.parentRecurringId !== null && transformed.parentRecurringId !== undefined) {
+        if (typeof transformed.parentRecurringId === 'object' && transformed.parentRecurringId._id) {
+          transformed.parentRecurringId = transformed.parentRecurringId._id.toString();
+        } else if (typeof transformed.parentRecurringId === 'object') {
+          transformed.parentRecurringId = transformed.parentRecurringId.toString();
+        }
         // Keep numeric parentRecurringId as number (from backup)
-        if (typeof transformed.parentRecurringId === 'string' && !isNaN(Number(transformed.parentRecurringId))) {
+        else if (typeof transformed.parentRecurringId === 'string' && !isNaN(Number(transformed.parentRecurringId))) {
           transformed.parentRecurringId = Number(transformed.parentRecurringId);
         }
       }
@@ -896,7 +927,7 @@ export const backupDB = {
         transformed.periodType = 'monthly';
       }
       
-      // Remove __v (old MongoDB version key)
+      // Remove __v (MongoDB version key)
       delete transformed.__v;
       
       return transformed;
@@ -1313,14 +1344,6 @@ export const backupDB = {
       if (importCounts.income > 0 && verifyCounts.income !== importCounts.income) {
         console.warn(`Income count mismatch: imported ${importCounts.income}, found ${verifyCounts.income}`);
       }
-      
-      // Return import results
-      return {
-        success: true,
-        counts: importCounts,
-        verifiedCounts: verifyCounts,
-        totalImported
-      };
     });
   },
   

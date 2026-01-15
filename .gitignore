@@ -41,6 +41,3 @@ android
 .env
 .env.local
 .env.production
-
-# Local backups
-backups/

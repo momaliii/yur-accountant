@@ -23,34 +23,57 @@ export async function processOfflineQueue() {
     return;
   }
 
+  // Check if user is authenticated
+  const authService = (await import('../auth/authService.js')).default;
+  if (!authService.isAuthenticated()) {
+    console.log('Not authenticated, skipping offline queue processing');
+    return;
+  }
+
   const operations = [...offlineQueue];
   offlineQueue.length = 0;
   saveQueue();
 
+  console.log(`Processing ${operations.length} queued operations...`);
+
   for (const operation of operations) {
     try {
-      // Import API services dynamically
-      const apiServices = await import('../api/index.js');
+      // Use syncToAPI from useStore
+      const { useDataStore } = await import('../../stores/useStore.js');
+      const store = useDataStore.getState();
       
-      switch (operation.type) {
-        case 'create':
-          await apiServices[`${operation.entity}Service`]?.add(operation.data);
-          break;
-        case 'update':
-          await apiServices[`${operation.entity}Service`]?.update(operation.id, operation.data);
-          break;
-        case 'delete':
-          await apiServices[`${operation.entity}Service`]?.remove(operation.id);
-          break;
-      }
+      // Map operation types
+      const operationType = operation.type === 'create' ? 'add' : 
+                           operation.type === 'remove' ? 'delete' : 
+                           operation.type;
+      
+      await store.syncToAPI(operation.entity, operationType, operation.data || { ...operation.data, id: operation.id });
+      
+      console.log(`Successfully synced ${operation.entity} ${operation.type}`);
     } catch (error) {
       console.error('Failed to sync offline operation:', error);
-      // Re-queue failed operations
-      offlineQueue.push(operation);
+      // Re-queue failed operations (with retry limit)
+      if (!operation.retryCount) {
+        operation.retryCount = 0;
+      }
+      operation.retryCount++;
+      
+      // Only re-queue if retry count is less than 3
+      if (operation.retryCount < 3) {
+        offlineQueue.push(operation);
+      } else {
+        console.error(`Operation failed after ${operation.retryCount} retries, removing from queue:`, operation);
+      }
     }
   }
 
   saveQueue();
+  
+  if (offlineQueue.length > 0) {
+    console.log(`${offlineQueue.length} operations still in queue`);
+  } else {
+    console.log('All queued operations processed successfully');
+  }
 }
 
 // Save queue to localStorage

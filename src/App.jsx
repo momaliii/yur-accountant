@@ -8,7 +8,9 @@ import UpdateChecker from './components/UpdateChecker';
 import { useDataStore, useSettingsStore } from './stores/useStore';
 import { useAuthStore } from './stores/authStore';
 import currencyService from './services/currency/currencyService';
-import fileStorage from './services/storage/fileStorage.js';
+import syncService from './services/sync/syncService';
+import fileStorage from './services/storage/fileStorage';
+import { initOfflineService } from './services/offline/offlineService';
 
 // Lazy load heavy components
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -57,12 +59,12 @@ export default function App() {
   const { exchangeRates, setExchangeRates, lastRateUpdate, hasSeenOnboarding } = useSettingsStore();
   const { initialize: initializeAuth, isAuthenticated } = useAuthStore();
   const [showOnboarding, setShowOnboarding] = useState(!hasSeenOnboarding);
+  const [hasSynced, setHasSynced] = useState(false);
 
   useEffect(() => {
     initializeAuth();
   }, [initializeAuth]);
 
-  // Initial local setup (IndexedDB + file backup)
   useEffect(() => {
     // Check if running in Electron
     const isElectron = !!(window.electron || (typeof window !== 'undefined' && window.process && window.process.type === 'renderer'));
@@ -73,6 +75,9 @@ export default function App() {
     // Initialize data and wait for completion
     const initApp = async () => {
       try {
+        // Initialize offline service
+        initOfflineService();
+        
         // Initialize file storage (for Electron/Capacitor)
         await fileStorage.initialize();
         
@@ -85,10 +90,29 @@ export default function App() {
           console.log('Data imported from file to IndexedDB');
         }
         
-        // Initialize database from local IndexedDB / file
-        console.log('Initializing local database...');
+        // Initialize database
+        console.log('Initializing database...');
         await initializeData();
-        console.log('Local database initialized successfully');
+        console.log('Database initialized successfully');
+        
+        // Sync from server if authenticated
+        if (isAuthenticated) {
+          console.log('User authenticated, syncing from server...');
+          try {
+            const syncResult = await syncService.syncFromServer();
+            if (syncResult.success) {
+              console.log('Sync from server successful:', syncResult.data);
+              // Reload data after sync
+              await initializeData();
+            } else {
+              console.warn('Sync from server failed:', syncResult.error);
+            }
+          } catch (error) {
+            console.error('Error syncing from server:', error);
+          }
+        } else {
+          console.log('User not authenticated, skipping server sync');
+        }
         
         // Clean up any duplicate expenses first
         console.log('Cleaning up duplicate expenses...');
@@ -183,13 +207,12 @@ export default function App() {
     };
     
     initApp();
-  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates]);
+  }, [initializeData, processRecurringExpenses, cleanupDuplicateExpenses, exchangeRates, lastRateUpdate, setExchangeRates, isAuthenticated, hasSynced]);
   
-  // Clear local data when user logs out
+  // Reset sync flag when authentication state changes
   useEffect(() => {
     if (!isAuthenticated) {
-      // Clear last user ID when logged out
-      localStorage.removeItem('lastUserId');
+      setHasSynced(false);
     }
   }, [isAuthenticated]);
 

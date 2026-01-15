@@ -224,9 +224,7 @@ export default function Income() {
     currencyService.formatCurrency(amount, currency || baseCurrency);
 
   const getClientName = (clientId) => {
-    if (!clientId) return 'No client';
-    // Handle both string and number IDs
-    const client = clients.find((c) => c.id === clientId || c.id === parseInt(clientId) || String(c.id) === String(clientId));
+    const client = clients.find((c) => c.id === clientId);
     return client?.name || 'Unknown Client';
   };
 

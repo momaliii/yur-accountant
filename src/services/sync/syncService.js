@@ -1,16 +1,4 @@
 import { backupDB } from '../db/database.js';
-import clientsAPI from '../api/clients.js';
-import incomeAPI from '../api/income.js';
-import expensesAPI from '../api/expenses.js';
-import debtsAPI from '../api/debts.js';
-import goalsAPI from '../api/goals.js';
-import invoicesAPI from '../api/invoices.js';
-import todosAPI from '../api/todos.js';
-import listsAPI from '../api/lists.js';
-import savingsAPI from '../api/savings.js';
-import savingsTransactionsAPI from '../api/savingsTransactions.js';
-import openingBalancesAPI from '../api/openingBalances.js';
-import expectedIncomeAPI from '../api/expectedIncome.js';
 import authService from '../auth/authService.js';
 
 class SyncService {
@@ -18,6 +6,8 @@ class SyncService {
     this.isSyncing = false;
     this.syncQueue = [];
     this.lastSyncTime = null;
+    this.periodicSyncInterval = null;
+    this.periodicSyncIntervalMinutes = 5; // Default: sync every 5 minutes
   }
 
   // Check if user is authenticated
@@ -39,111 +29,34 @@ class SyncService {
 
     this.isSyncing = true;
 
+    // Use Supabase (default)
     try {
-      // First, ensure all pending queue operations are processed and completed
-      // Wait a bit to ensure server has processed the sync operations
-      if (this.syncQueue.length > 0) {
-        console.log('Processing queue before syncing from server...');
-        await this.processQueue();
-        // Wait a moment for server to process the operations
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      const supabaseSync = (await import('../supabase/supabaseSync.js')).default;
+      if (supabaseSync.isAvailable()) {
+        const result = await supabaseSync.syncFromSupabase();
+        if (result.success) {
+          this.lastSyncTime = new Date().toISOString();
+          localStorage.setItem('lastSyncTime', this.lastSyncTime);
+          this.isSyncing = false;
+          return result;
+        } else {
+          this.isSyncing = false;
+          return result;
+        }
+      } else {
+        this.isSyncing = false;
+        return { success: false, error: 'Supabase not configured. Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY' };
       }
-
-      const [
-        clients,
-        income,
-        expenses,
-        debts,
-        goals,
-        invoices,
-        todos,
-        lists,
-        savings,
-        savingsTransactions,
-        openingBalances,
-        expectedIncome,
-      ] = await Promise.all([
-        clientsAPI.getAll().catch(() => []),
-        incomeAPI.getAll().catch(() => []),
-        expensesAPI.getAll().catch(() => []),
-        debtsAPI.getAll().catch(() => []),
-        goalsAPI.getAll().catch(() => []),
-        invoicesAPI.getAll().catch(() => []),
-        todosAPI.getAll().catch(() => []),
-        listsAPI.getAll().catch(() => []),
-        savingsAPI.getAll().catch(() => []),
-        savingsTransactionsAPI.getAll().catch(() => []),
-        openingBalancesAPI.getAll().catch(() => []),
-        expectedIncomeAPI.getAll().catch(() => []),
-      ]);
-
-      // Get local data before clearing to merge with server data
-      const localData = await backupDB.exportAll();
-      
-      // Merge local data (that hasn't been synced yet) with server data
-      // Priority: Server data (has mongoId) > Local data (no mongoId)
-      const mergeData = (localArray, serverArray, key = 'id') => {
-        const merged = [...serverArray];
-        const serverIds = new Set(serverArray.map(item => item.mongoId || item._id || item[key]));
-        
-        // Add local items that don't exist on server (not yet synced)
-        localArray.forEach(localItem => {
-          const localId = localItem.mongoId || localItem._id || localItem[key];
-          if (!serverIds.has(localId) && !localItem.mongoId) {
-            // Local item without mongoId (not synced yet) - keep it
-            merged.push(localItem);
-          }
-        });
-        
-        return merged;
-      };
-
-      // Import merged data to IndexedDB
-      const data = {
-        clients: mergeData(localData.clients || [], clients || [], 'id'),
-        income: mergeData(localData.income || [], income || [], 'id'),
-        expenses: mergeData(localData.expenses || [], expenses || [], 'id'),
-        debts: mergeData(localData.debts || [], debts || [], 'id'),
-        goals: mergeData(localData.goals || [], goals || [], 'id'),
-        invoices: mergeData(localData.invoices || [], invoices || [], 'id'),
-        todos: mergeData(localData.todos || [], todos || [], 'id'),
-        lists: mergeData(localData.lists || [], lists || [], 'id'),
-        savings: mergeData(localData.savings || [], savings || [], 'id'),
-        savingsTransactions: mergeData(localData.savingsTransactions || [], savingsTransactions || [], 'id'),
-        openingBalances: mergeData(localData.openingBalances || [], openingBalances || [], 'id'),
-        expectedIncome: mergeData(localData.expectedIncome || [], expectedIncome || [], 'id'),
-      };
-
-      await backupDB.importAll(data);
-      this.lastSyncTime = new Date().toISOString();
-      localStorage.setItem('lastSyncTime', this.lastSyncTime);
-
-      return {
-        success: true,
-        data: {
-          clients: data.clients.length,
-          income: data.income.length,
-          expenses: data.expenses.length,
-          debts: data.debts.length,
-          goals: data.goals.length,
-          invoices: data.invoices.length,
-          todos: data.todos.length,
-          lists: data.lists.length,
-          savings: data.savings.length,
-          savingsTransactions: data.savingsTransactions.length,
-          openingBalances: data.openingBalances.length,
-          expectedIncome: data.expectedIncome.length,
-        },
-      };
     } catch (error) {
-      console.error('Sync from server error:', error);
-      return { success: false, error: error.message };
-    } finally {
+      console.error('Error syncing from Supabase:', error);
       this.isSyncing = false;
+      return { success: false, error: error.message };
     }
   }
 
-  // Sync all data from local to server
+
+
+  // Sync all data from local to server (Supabase)
   async syncToServer() {
     if (!this.isAuthenticated()) {
       console.log('Not authenticated, skipping sync');
@@ -158,19 +71,75 @@ class SyncService {
     this.isSyncing = true;
 
     try {
+      const supabaseSync = (await import('../supabase/supabaseSync.js')).default;
+      if (!supabaseSync.isAvailable()) {
+        this.isSyncing = false;
+        return { success: false, error: 'Supabase not configured' };
+      }
+
       // Export from IndexedDB
       const localData = await backupDB.exportAll();
 
-      // Upload to server via migration endpoint
-      const migrationAPI = (await import('../api/migration.js')).default;
-      const result = await migrationAPI.upload(localData);
+      // Sync each entity type to Supabase
+      const entityTypes = [
+        { name: 'clients', entity: 'client' },
+        { name: 'income', entity: 'income' },
+        { name: 'expenses', entity: 'expense' },
+        { name: 'debts', entity: 'debt' },
+        { name: 'goals', entity: 'goal' },
+        { name: 'invoices', entity: 'invoice' },
+        { name: 'todos', entity: 'todo' },
+        { name: 'lists', entity: 'list' },
+        { name: 'savings', entity: 'saving' },
+        { name: 'savingsTransactions', entity: 'savingsTransaction' },
+        { name: 'openingBalances', entity: 'openingBalance' },
+        { name: 'expectedIncome', entity: 'expectedIncome' },
+      ];
+
+      let syncedCount = 0;
+      const errors = [];
+
+      for (const { name, entity } of entityTypes) {
+        const items = localData[name] || [];
+        for (const item of items) {
+          try {
+            // Check if item has a valid Supabase UUID
+            const hasValidSupabaseId = item.supabase_id && supabaseSync.isValidUUID(item.supabase_id);
+            const hasValidMongoId = item.mongoId && supabaseSync.isValidUUID(item.mongoId);
+            
+            if (hasValidSupabaseId || hasValidMongoId) {
+              // Update existing record in Supabase
+              const result = await supabaseSync.syncEntity(entity, 'update', item);
+              if (result && result.id && item.id) {
+                // Update local supabase_id if we got a new UUID
+                await supabaseSync.updateLocalSupabaseId(entity, item.id, result.id);
+              }
+            } else {
+              // No valid Supabase ID - create new record
+              // This handles old data with MongoDB ObjectIds
+              // Old data will be recreated in Supabase with new UUIDs
+              const result = await supabaseSync.syncEntity(entity, 'add', item);
+              if (result && result.id && item.id) {
+                // Save the new Supabase UUID to local data
+                await supabaseSync.updateLocalSupabaseId(entity, item.id, result.id);
+                console.log(`Created new Supabase record for ${entity} (local ID: ${item.id})`);
+              }
+            }
+            syncedCount++;
+          } catch (error) {
+            console.error(`Error syncing ${entity}:`, error);
+            errors.push({ entity, item: { id: item.id, name: item.name || item.title || 'N/A' }, error: error.message });
+          }
+        }
+      }
 
       this.lastSyncTime = new Date().toISOString();
       localStorage.setItem('lastSyncTime', this.lastSyncTime);
 
       return {
-        success: true,
-        result,
+        success: errors.length === 0,
+        syncedCount,
+        errors: errors.length > 0 ? errors : undefined,
       };
     } catch (error) {
       console.error('Sync to server error:', error);
@@ -180,13 +149,17 @@ class SyncService {
     }
   }
 
-  // Full bidirectional sync
-  async fullSync() {
+  // Full bidirectional sync (with optional conflict resolution)
+  async fullSync(useConflictResolution = false) {
     if (!this.isAuthenticated()) {
       return { success: false, error: 'Not authenticated' };
     }
 
     try {
+      if (useConflictResolution) {
+        return await this.syncWithConflictResolution();
+      }
+
       // First sync local to server (push changes)
       const pushResult = await this.syncToServer();
       
@@ -256,75 +229,213 @@ class SyncService {
 
   async executeCreate(operation) {
     const { entity, data } = operation;
-    const apiMap = {
-      client: clientsAPI,
-      income: incomeAPI,
-      expense: expensesAPI,
-      debt: debtsAPI,
-      goal: goalsAPI,
-      invoice: invoicesAPI,
-      todo: todosAPI,
-      list: listsAPI,
-      saving: savingsAPI,
-      savingsTransaction: savingsTransactionsAPI,
-      openingBalance: openingBalancesAPI,
-      expectedIncome: expectedIncomeAPI,
-    };
-
-    const api = apiMap[entity];
-    if (api) {
-      await api.add(data);
+    try {
+      const supabaseSync = (await import('../supabase/supabaseSync.js')).default;
+      if (supabaseSync.isAvailable()) {
+        await supabaseSync.syncEntity(entity, 'add', data);
+      }
+    } catch (error) {
+      console.error('Error executing create operation:', error);
+      throw error;
     }
   }
 
   async executeUpdate(operation) {
     const { entity, id, data } = operation;
-    const apiMap = {
-      client: clientsAPI,
-      income: incomeAPI,
-      expense: expensesAPI,
-      debt: debtsAPI,
-      goal: goalsAPI,
-      invoice: invoicesAPI,
-      todo: todosAPI,
-      list: listsAPI,
-      saving: savingsAPI,
-      savingsTransaction: savingsTransactionsAPI,
-      openingBalance: openingBalancesAPI,
-      expectedIncome: expectedIncomeAPI,
-    };
-
-    const api = apiMap[entity];
-    if (api) {
-      await api.update(id, data);
+    try {
+      const supabaseSync = (await import('../supabase/supabaseSync.js')).default;
+      if (supabaseSync.isAvailable()) {
+        await supabaseSync.syncEntity(entity, 'update', { ...data, id });
+      }
+    } catch (error) {
+      console.error('Error executing update operation:', error);
+      throw error;
     }
   }
 
   async executeDelete(operation) {
     const { entity, id } = operation;
-    const apiMap = {
-      client: clientsAPI,
-      income: incomeAPI,
-      expense: expensesAPI,
-      debt: debtsAPI,
-      goal: goalsAPI,
-      invoice: invoicesAPI,
-      todo: todosAPI,
-      list: listsAPI,
-      saving: savingsAPI,
-      savingsTransaction: savingsTransactionsAPI,
-      openingBalance: openingBalancesAPI,
-      expectedIncome: expectedIncomeAPI,
-    };
+    try {
+      const supabaseSync = (await import('../supabase/supabaseSync.js')).default;
+      if (supabaseSync.isAvailable()) {
+        await supabaseSync.syncEntity(entity, 'delete', { id });
+      }
+    } catch (error) {
+      console.error('Error executing delete operation:', error);
+      throw error;
+    }
+  }
 
-    const api = apiMap[entity];
-    if (api) {
-      await api.delete(id);
+  // Start periodic sync
+  startPeriodicSync(intervalMinutes = 5) {
+    this.periodicSyncIntervalMinutes = intervalMinutes;
+    
+    // Clear existing interval if any
+    if (this.periodicSyncInterval) {
+      clearInterval(this.periodicSyncInterval);
+    }
+
+    // Only start if authenticated
+    if (!this.isAuthenticated()) {
+      return;
+    }
+
+    // Check if conflict resolution is enabled
+    const useConflictResolution = localStorage.getItem('useConflictResolution') === 'true';
+
+    // Sync immediately, then set up interval
+    this.fullSync(useConflictResolution).catch(err => {
+      console.error('Periodic sync error:', err);
+    });
+
+    // Set up periodic sync
+    this.periodicSyncInterval = setInterval(() => {
+      if (this.isAuthenticated() && navigator.onLine) {
+        console.log('Running periodic sync...');
+        this.fullSync(useConflictResolution).catch(err => {
+          console.error('Periodic sync error:', err);
+        });
+      }
+    }, intervalMinutes * 60 * 1000);
+
+    console.log(`Periodic sync started: every ${intervalMinutes} minutes`);
+  }
+
+  // Stop periodic sync
+  stopPeriodicSync() {
+    if (this.periodicSyncInterval) {
+      clearInterval(this.periodicSyncInterval);
+      this.periodicSyncInterval = null;
+      console.log('Periodic sync stopped');
+    }
+  }
+
+  // Conflict resolution: merge local and server data
+  async resolveConflict(localData, serverData, entity) {
+    // Strategy: Last Write Wins (LWW) based on updatedAt timestamp
+    // If no timestamp, prefer server data (more recent)
+    
+    const localUpdated = localData.updatedAt ? new Date(localData.updatedAt) : new Date(localData.createdAt || 0);
+    const serverUpdated = serverData.updatedAt ? new Date(serverData.updatedAt) : new Date(serverData.createdAt || 0);
+
+    if (serverUpdated > localUpdated) {
+      // Server is newer, use server data
+      console.log(`Conflict resolved: using server data for ${entity} (server newer)`);
+      return { resolved: true, data: serverData, source: 'server' };
+    } else if (localUpdated > serverUpdated) {
+      // Local is newer, use local data
+      console.log(`Conflict resolved: using local data for ${entity} (local newer)`);
+      return { resolved: true, data: localData, source: 'local' };
+    } else {
+      // Same timestamp, prefer server (has mongoId)
+      console.log(`Conflict resolved: using server data for ${entity} (same timestamp)`);
+      return { resolved: true, data: serverData, source: 'server' };
+    }
+  }
+
+  // Sync with conflict resolution
+  async syncWithConflictResolution() {
+    if (!this.isAuthenticated()) {
+      return { success: false, error: 'Not authenticated' };
+    }
+
+    try {
+      const conflictResolution = (await import('./conflictResolution.js')).default;
+      const { backupDB } = await import('../db/database.js');
+      
+      // Get local data
+      const localData = await backupDB.exportAll();
+
+      // First, sync local to server (push changes)
+      await this.syncToServer();
+
+      // Then, sync server to local (pull latest)
+      const pullResult = await this.syncFromServer();
+      
+      if (!pullResult.success) {
+        return pullResult;
+      }
+
+      // Get server data after sync
+      const serverData = await backupDB.exportAll();
+
+      // Detect and resolve conflicts
+      const entityTypes = [
+        'clients', 'income', 'expenses', 'debts', 'goals',
+        'invoices', 'todos', 'lists', 'savings', 'savingsTransactions',
+        'openingBalances', 'expectedIncome'
+      ];
+
+      const allConflicts = [];
+      const resolvedData = { ...serverData };
+
+      for (const entity of entityTypes) {
+        const localItems = localData[entity] || [];
+        const serverItems = serverData[entity] || [];
+        
+        // Detect conflicts
+        const conflicts = conflictResolution.detectConflicts(localItems, serverItems, entity);
+        
+        if (conflicts.length > 0) {
+          console.log(`Found ${conflicts.length} conflicts in ${entity}`);
+          
+          // Resolve each conflict
+          for (const conflict of conflicts) {
+            const resolution = conflictResolution.resolveConflict(
+              conflict.localData,
+              conflict.serverData,
+              entity
+            );
+            
+            if (resolution.resolved) {
+              // Update resolved data
+              const index = resolvedData[entity].findIndex(
+                item => (item.mongoId || item._id || item.id) === 
+                        (conflict.localData.mongoId || conflict.localData._id || conflict.localData.id)
+              );
+              
+              if (index !== -1) {
+                resolvedData[entity][index] = resolution.data;
+              }
+              
+              allConflicts.push({
+                entity,
+                ...resolution,
+                localTimestamp: conflict.localTimestamp,
+                serverTimestamp: conflict.serverTimestamp,
+              });
+            } else {
+              // Manual resolution required
+              allConflicts.push({
+                entity,
+                ...resolution,
+                requiresManualResolution: true,
+              });
+            }
+          }
+        }
+      }
+
+      // If conflicts were resolved, update local database
+      if (allConflicts.length > 0) {
+        await backupDB.importAll(resolvedData);
+        console.log(`Resolved ${allConflicts.length} conflicts`);
+      }
+
+      return {
+        success: pullResult.success,
+        conflicts: allConflicts.length,
+        conflictsDetails: allConflicts,
+        data: pullResult.data,
+      };
+    } catch (error) {
+      console.error('Sync with conflict resolution error:', error);
+      return { success: false, error: error.message };
     }
   }
 
   // Initialize sync service
-  async init() {
+  init() {
     // Load queue from localStorage
     const savedQueue = localStorage.getItem('syncQueue');
     if (savedQueue) {
@@ -339,19 +450,26 @@ class SyncService {
     // Load last sync time
     this.lastSyncTime = localStorage.getItem('lastSyncTime');
 
-    // Process queue on init if authenticated (wait for completion)
-    if (this.isAuthenticated() && this.syncQueue.length > 0) {
-      console.log(`Processing ${this.syncQueue.length} queued sync operations on init...`);
-      await this.processQueue();
-      console.log('Sync queue processed on init');
+    // Load periodic sync interval from settings
+    const savedInterval = localStorage.getItem('periodicSyncIntervalMinutes');
+    if (savedInterval) {
+      this.periodicSyncIntervalMinutes = parseInt(savedInterval, 10);
+    }
+
+    // Process queue on init if authenticated
+    if (this.isAuthenticated()) {
+      this.processQueue();
+      
+      // Start periodic sync if enabled
+      const periodicSyncEnabled = localStorage.getItem('periodicSyncEnabled') !== 'false';
+      if (periodicSyncEnabled) {
+        this.startPeriodicSync(this.periodicSyncIntervalMinutes);
+      }
     }
   }
 }
 
 const syncService = new SyncService();
-// Initialize sync service (async, but don't block)
-syncService.init().catch(error => {
-  console.error('Error initializing sync service:', error);
-});
+syncService.init();
 
 export default syncService;

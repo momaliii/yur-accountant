@@ -199,11 +199,6 @@ export default function Settings() {
       await backupDB.importAll(dataCopy);
       console.log('Import completed successfully');
       
-      // Reload data from IndexedDB to ensure it's displayed
-      const { initializeData } = useDataStore.getState();
-      await initializeData();
-      console.log('Data reinitialized after import');
-      
       // Show success message
       setSaveStatus('import');
       setTimeout(() => {
