@@ -37,6 +37,10 @@ export const checkForUpdates = async () => {
     
     return response;
   } catch (error) {
+    // Silently ignore 404 errors (route not implemented yet)
+    if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+      return { updateAvailable: false };
+    }
     console.error('Error checking for updates:', error);
     return { updateAvailable: false, error: error.message };
   }

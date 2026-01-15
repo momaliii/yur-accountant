@@ -19,6 +19,11 @@ export const useDashboardStore = create((set, get) => ({
         isLoading: false,
       });
     } catch (error) {
+      // Silently ignore 404 errors (route not implemented yet)
+      if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+        set({ widgets: [], layout: {}, isLoading: false });
+        return;
+      }
       console.error('Error loading dashboard layout:', error);
       set({ isLoading: false });
     }
@@ -49,6 +54,11 @@ export const useDashboardStore = create((set, get) => ({
       const types = await dashboardService.getWidgetTypes();
       set({ availableWidgetTypes: types });
     } catch (error) {
+      // Silently ignore 404 errors (route not implemented yet)
+      if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+        set({ availableWidgetTypes: [] });
+        return;
+      }
       console.error('Error loading widget types:', error);
     }
   },

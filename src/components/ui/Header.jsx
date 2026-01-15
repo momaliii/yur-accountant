@@ -34,6 +34,11 @@ export default function Header() {
         const response = await apiClient.get('/api/notifications/unread-count');
         setUnreadCount(response?.count || 0);
       } catch (error) {
+        // Silently ignore 404 errors (route not implemented yet)
+        if (error.message?.includes('404') || error.message?.includes('Not Found')) {
+          setUnreadCount(0);
+          return;
+        }
         console.error('Error fetching unread count:', error);
       }
     };
