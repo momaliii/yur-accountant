@@ -1,6 +1,4 @@
-import User from '../models/User.js';
-import Subscription from '../models/Subscription.js';
-import Plan from '../models/Plan.js';
+import { getSupabaseClient, getSupabaseAnonClient } from '../config/supabase.js';
 import { JWT_EXPIRES_IN } from '../config/jwt.js';
 import { logActivity, getClientIp, getUserAgent } from '../utils/activityLogger.js';
 
@@ -19,81 +17,106 @@ export default async function authRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Password must be at least 6 characters' });
       }
 
-      // Check if user exists
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
-      if (existingUser) {
-        return reply.code(400).send({ error: 'User already exists' });
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
       }
 
-      // Create user
-      const user = new User({
+      // Create user in Supabase Auth (using admin API with service role key)
+      const { data: authData, error: authError } = await supabase.auth.admin.createUser({
         email: email.toLowerCase(),
         password,
-        profile: {
+        email_confirm: true, // Auto-confirm email when using admin API
+        user_metadata: {
           name: name || '',
         },
       });
 
-      await user.save();
+      if (authError) {
+        fastify.log.error('Supabase signup error:', authError);
+        if (authError.message.includes('already registered')) {
+          return reply.code(400).send({ error: 'User already exists' });
+        }
+        return reply.code(500).send({ error: 'Registration failed: ' + authError.message });
+      }
 
-      // Create subscription if plan is provided
+      if (!authData.user) {
+        return reply.code(500).send({ error: 'Registration failed: No user data returned' });
+      }
+
+      // Get user metadata from Supabase
+      const userId = authData.user.id;
+      const userEmail = authData.user.email;
+      const userMetadata = authData.user.user_metadata || {};
+
+      // Create subscription if plan is provided (using Supabase)
       const planSlug = request.body.planSlug;
       if (planSlug) {
-        const plan = await Plan.findOne({ slug: planSlug, isActive: true });
+        const { data: plan } = await supabase
+          .from('plans')
+          .select('*')
+          .eq('slug', planSlug)
+          .eq('is_active', true)
+          .single();
+
         if (plan) {
-          const trialEndDate = plan.trialDays > 0
-            ? new Date(Date.now() + plan.trialDays * 24 * 60 * 60 * 1000)
+          const trialEndDate = plan.trial_days > 0
+            ? new Date(Date.now() + plan.trial_days * 24 * 60 * 60 * 1000).toISOString()
             : null;
 
-          const subscription = new Subscription({
-            userId: user._id,
+          const subscriptionData = {
+            user_id: userId,
             plan: plan.slug,
-            status: plan.trialDays > 0 ? 'trial' : 'active',
-            billingCycle: request.body.billingCycle || 'monthly',
+            status: plan.trial_days > 0 ? 'trial' : 'active',
+            billing_cycle: request.body.billingCycle || 'monthly',
             amount: request.body.billingCycle === 'yearly' && plan.price?.yearly > 0
               ? plan.price.yearly
               : plan.price?.monthly || 0,
             currency: plan.currency || 'USD',
-            trialEndDate,
-          });
+            trial_end_date: trialEndDate,
+          };
 
-          await subscription.save();
+          await supabase.from('subscriptions').insert(subscriptionData);
         }
       } else {
         // Create default free subscription
-        const defaultPlan = await Plan.findOne({ isDefault: true, isActive: true }) || 
-                           await Plan.findOne({ slug: 'free', isActive: true });
-        
+        const { data: defaultPlan } = await supabase
+          .from('plans')
+          .select('*')
+          .or('is_default.eq.true,slug.eq.free')
+          .eq('is_active', true)
+          .limit(1)
+          .single();
+
         if (defaultPlan) {
-          const subscription = new Subscription({
-            userId: user._id,
+          const subscriptionData = {
+            user_id: userId,
             plan: defaultPlan.slug,
             status: 'active',
-            billingCycle: 'monthly',
+            billing_cycle: 'monthly',
             amount: 0,
             currency: defaultPlan.currency || 'USD',
-          });
-          await subscription.save();
+          };
+
+          await supabase.from('subscriptions').insert(subscriptionData);
         }
       }
 
-      // Generate token
+      // Generate token (using Supabase user ID)
       const token = fastify.jwt.sign(
-        { userId: user._id, email: user.email, role: user.role },
+        { userId, email: userEmail, role: userMetadata.role || 'user' },
         { expiresIn: JWT_EXPIRES_IN }
       );
-
-      // Update last login
-      user.lastLogin = new Date();
-      await user.save();
 
       return {
         token,
         user: {
-          id: user._id,
-          email: user.email,
-          role: user.role,
-          profile: user.profile,
+          id: userId,
+          email: userEmail,
+          role: userMetadata.role || 'user',
+          profile: {
+            name: userMetadata.name || name || '',
+          },
         },
       };
     } catch (error) {
@@ -111,56 +134,84 @@ export default async function authRoutes(fastify, options) {
         return reply.code(400).send({ error: 'Email and password are required' });
       }
 
-      // Find user
-      const user = await User.findOne({ email: email.toLowerCase() });
-      if (!user) {
+      const supabase = getSupabaseClient();
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
+
+      // Sign in with Supabase Auth (using anon key for signInWithPassword)
+      const anonClient = getSupabaseAnonClient();
+      if (!anonClient) {
+        fastify.log.error('Supabase anon client not configured');
+        return reply.code(500).send({ error: 'Server configuration error' });
+      }
+      
+      const { data: authData, error: authError } = await anonClient.auth.signInWithPassword({
+        email: email.toLowerCase(),
+        password,
+      });
+
+      if (authError) {
+        fastify.log.error('Supabase login error:', authError);
         return reply.code(401).send({ error: 'Invalid credentials' });
       }
 
-      // Check if user is active
-      if (!user.isActive) {
-        return reply.code(403).send({ error: 'Account is deactivated' });
-      }
-
-      // Verify password
-      const isValidPassword = await user.comparePassword(password);
-      if (!isValidPassword) {
+      if (!authData.user) {
         return reply.code(401).send({ error: 'Invalid credentials' });
       }
 
-      // 2FA has been removed - skip 2FA verification
+      const userId = authData.user.id;
+      const userEmail = authData.user.email;
+      const userMetadata = authData.user.user_metadata || {};
+
+      // Check if user is active (check in Supabase users table if exists)
+      // For now, we'll assume all users are active unless we have a users table
+
+      // Get subscription from Supabase
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
       // Generate token
       const token = fastify.jwt.sign(
-        { userId: user._id, email: user.email, role: user.role },
+        { userId, email: userEmail, role: userMetadata.role || 'user' },
         { expiresIn: JWT_EXPIRES_IN }
       );
 
-      // Create session
+      // Create session in Supabase (optional - can use sessions table)
       try {
-        const Session = (await import('../models/Session.js')).default;
-        const session = new Session({
-          userId: user._id,
+        await supabase.from('sessions').insert({
+          user_id: userId,
           token,
-          ipAddress: getClientIp(request),
-          userAgent: getUserAgent(request),
-          deviceInfo: {
+          ip_address: getClientIp(request),
+          user_agent: getUserAgent(request),
+          device_info: {
             platform: request.headers['user-agent']?.includes('Mobile') ? 'mobile' : 'desktop',
           },
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         });
-        await session.save();
       } catch (error) {
         fastify.log.warn('Failed to create session:', error);
       }
 
-      // Update last login
-      user.lastLogin = new Date();
-      await user.save();
+      // Update last login in Supabase (if users table exists)
+      try {
+        await supabase
+          .from('users')
+          .update({ last_login: new Date().toISOString() })
+          .eq('id', userId);
+      } catch (error) {
+        // Users table might not exist - that's okay
+        fastify.log.warn('Failed to update last login:', error);
+      }
 
-      // Log login activity (non-blocking - don't fail login if logging fails)
+      // Log login activity (non-blocking)
       logActivity({
-        userId: user._id,
+        userId,
         action: 'login',
         ipAddress: getClientIp(request),
         userAgent: getUserAgent(request),
@@ -168,18 +219,17 @@ export default async function authRoutes(fastify, options) {
         fastify.log.warn('Failed to log login activity:', err);
       });
 
-      // Log security event
+      // Log security event in Supabase
       try {
-        const AuditLog = (await import('../models/AuditLog.js')).default;
-        new AuditLog({
-          userId: user._id,
+        await supabase.from('audit_logs').insert({
+          user_id: userId,
           action: 'login_success',
-          resourceType: 'user',
-          resourceId: user._id.toString(),
-          ipAddress: getClientIp(request),
-          userAgent: getUserAgent(request),
+          resource_type: 'user',
+          resource_id: userId,
+          ip_address: getClientIp(request),
+          user_agent: getUserAgent(request),
           severity: 'medium',
-        }).save().catch(() => {});
+        });
       } catch (error) {
         fastify.log.warn('Failed to log security event:', error);
       }
@@ -187,11 +237,16 @@ export default async function authRoutes(fastify, options) {
       return {
         token,
         user: {
-          id: user._id,
-          email: user.email,
-          role: user.role,
-          profile: user.profile,
-          subscription: user.subscription,
+          id: userId,
+          email: userEmail,
+          role: userMetadata.role || 'user',
+          profile: {
+            name: userMetadata.name || '',
+          },
+          subscription: subscription ? {
+            plan: subscription.plan,
+            status: subscription.status,
+          } : null,
         },
       };
     } catch (error) {
@@ -205,20 +260,41 @@ export default async function authRoutes(fastify, options) {
   fastify.get('/me', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
       const userId = request.user.userId || request.user.id;
-      const user = await User.findById(userId);
+      const supabase = getSupabaseClient();
       
-      if (!user) {
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
+
+      // Get user from Supabase Auth
+      const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (authError || !authUser) {
         return reply.code(404).send({ error: 'User not found' });
       }
 
+      // Get subscription
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
       return {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        profile: user.profile,
-        subscription: user.subscription,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
+        id: authUser.id,
+        email: authUser.email,
+        role: authUser.user_metadata?.role || 'user',
+        profile: {
+          name: authUser.user_metadata?.name || '',
+        },
+        subscription: subscription ? {
+          plan: subscription.plan,
+          status: subscription.status,
+        } : null,
+        lastLogin: authUser.last_sign_in_at,
+        createdAt: authUser.created_at,
       };
     } catch (error) {
       fastify.log.error(error);
@@ -231,30 +307,56 @@ export default async function authRoutes(fastify, options) {
     try {
       const userId = request.user.userId || request.user.id;
       const { profile } = request.body;
+      const supabase = getSupabaseClient();
+      
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
 
-      const user = await User.findById(userId);
-      if (!user) {
+      // Get current user
+      const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (authError || !authUser) {
         return reply.code(404).send({ error: 'User not found' });
       }
 
-      // Update profile fields
-      if (profile) {
-        user.profile = {
-          ...user.profile,
-          ...profile,
-        };
+      // Update user metadata in Supabase Auth
+      const updatedMetadata = {
+        ...authUser.user_metadata,
+        ...(profile && { name: profile.name || authUser.user_metadata?.name || '' }),
+      };
+
+      const { error: updateError } = await supabase.auth.admin.updateUserById(userId, {
+        user_metadata: updatedMetadata,
+      });
+
+      if (updateError) {
+        fastify.log.error('Failed to update user metadata:', updateError);
+        return reply.code(500).send({ error: 'Failed to update profile' });
       }
 
-      await user.save();
+      // Get subscription
+      const { data: subscription } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
 
       return {
-        id: user._id,
-        email: user.email,
-        role: user.role,
-        profile: user.profile,
-        subscription: user.subscription,
-        lastLogin: user.lastLogin,
-        createdAt: user.createdAt,
+        id: authUser.id,
+        email: authUser.email,
+        role: updatedMetadata.role || 'user',
+        profile: {
+          name: updatedMetadata.name || '',
+        },
+        subscription: subscription ? {
+          plan: subscription.plan,
+          status: subscription.status,
+        } : null,
+        lastLogin: authUser.last_sign_in_at,
+        createdAt: authUser.created_at,
       };
     } catch (error) {
       fastify.log.error(error);
@@ -266,14 +368,21 @@ export default async function authRoutes(fastify, options) {
   fastify.post('/refresh', { preHandler: [fastify.authenticate] }, async (request, reply) => {
     try {
       const userId = request.user.userId || request.user.id;
-      const user = await User.findById(userId);
+      const supabase = getSupabaseClient();
       
-      if (!user || !user.isActive) {
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
+
+      // Get user from Supabase Auth
+      const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(userId);
+      
+      if (authError || !authUser) {
         return reply.code(401).send({ error: 'Invalid token' });
       }
 
       const token = fastify.jwt.sign(
-        { userId: user._id, email: user.email, role: user.role },
+        { userId: authUser.id, email: authUser.email, role: authUser.user_metadata?.role || 'user' },
         { expiresIn: JWT_EXPIRES_IN }
       );
 

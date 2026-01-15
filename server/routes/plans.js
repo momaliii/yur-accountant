@@ -1,20 +1,35 @@
-import Plan from '../models/Plan.js';
+import { getSupabaseClient } from '../config/supabase.js';
 
 export default async function plansRoutes(fastify, options) {
   // Get all active plans (public endpoint)
   fastify.get('/plans', async (request, reply) => {
     try {
       fastify.log.info('Plans route hit: /api/plans');
-      const plans = await Plan.find({ isActive: true })
-        .sort({ sortOrder: 1, createdAt: 1 });
+      const supabase = getSupabaseClient();
       
-      fastify.log.info(`Found ${plans.length} active plans`);
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
+
+      const { data: plans, error } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
       
-      if (plans.length === 0) {
+      if (error) {
+        fastify.log.error('Error fetching plans:', error);
+        return reply.code(500).send({ error: 'Failed to fetch plans', details: error.message });
+      }
+
+      fastify.log.info(`Found ${plans?.length || 0} active plans`);
+      
+      if (!plans || plans.length === 0) {
         fastify.log.warn('No active plans found in database');
       }
       
-      return { plans };
+      return { plans: plans || [] };
     } catch (error) {
       fastify.log.error('Error fetching plans:', error);
       return reply.code(500).send({ error: 'Failed to fetch plans', details: error.message });
@@ -24,12 +39,20 @@ export default async function plansRoutes(fastify, options) {
   // Get single plan details (public endpoint)
   fastify.get('/plans/:slug', async (request, reply) => {
     try {
-      const plan = await Plan.findOne({ 
-        slug: request.params.slug,
-        isActive: true 
-      });
+      const supabase = getSupabaseClient();
       
-      if (!plan) {
+      if (!supabase) {
+        return reply.code(500).send({ error: 'Supabase not configured' });
+      }
+
+      const { data: plan, error } = await supabase
+        .from('plans')
+        .select('*')
+        .eq('slug', request.params.slug)
+        .eq('is_active', true)
+        .single();
+      
+      if (error || !plan) {
         return reply.code(404).send({ error: 'Plan not found' });
       }
       

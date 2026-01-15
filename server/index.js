@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import jwt from '@fastify/jwt';
 import dotenv from 'dotenv';
-import { connectDB } from './config/database.js';
+import { getSupabaseClient, isSupabaseConfigured } from './config/supabase.js';
 import { initCache } from './services/cache.js';
 import authRoutes from './routes/auth.js';
 import adminRoutes from './routes/admin.js';
@@ -76,87 +76,116 @@ fastify.decorate('authenticate', async function(request, reply) {
   }
 });
 
-// Connect to MongoDB
-await connectDB();
+// Connect to Supabase
+if (!isSupabaseConfigured()) {
+  fastify.log.warn('Supabase not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY');
+} else {
+  const supabase = getSupabaseClient();
+  if (supabase) {
+    fastify.log.info('Supabase connected successfully');
+  }
+}
 
 // Initialize default plans if none exist
 const initDefaultPlans = async () => {
   try {
-    const Plan = (await import('./models/Plan.js')).default;
-    const planCount = await Plan.countDocuments();
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      fastify.log.warn('Supabase not configured, skipping plan initialization');
+      return;
+    }
+
+    // Check if plans exist
+    const { data: existingPlans, error: checkError } = await supabase
+      .from('plans')
+      .select('id')
+      .limit(1);
+
+    if (checkError && checkError.code !== 'PGRST116') { // PGRST116 = table doesn't exist
+      fastify.log.error('Error checking plans:', checkError);
+      return;
+    }
     
-    if (planCount === 0) {
-      fastify.log.info('Initializing default plans...');
-      
-      // Free Plan
-      const freePlan = new Plan({
-        name: 'Free',
-        slug: 'free',
-        description: 'Perfect for getting started. Basic features with limited usage.',
-        price: {
-          monthly: 0,
-          yearly: 0,
-        },
-        currency: 'USD',
-        features: [
-          { name: 'Basic Dashboard', included: true },
-          { name: 'Client Management', included: true, limit: 5 },
-          { name: 'Income Tracking', included: true, limit: 50 },
-          { name: 'Expense Tracking', included: true, limit: 50 },
-          { name: 'Basic Reports', included: true },
-        ],
-        limits: {
-          clients: 5,
-          incomeEntries: 50,
-          expenseEntries: 50,
-          invoices: 10,
-          storage: 100, // 100 MB
-          apiCalls: 1000, // per month
-        },
-        isActive: true,
-        isDefault: true,
-        trialDays: 0,
-        sortOrder: 1,
-      });
+    if (existingPlans && existingPlans.length > 0) {
+      fastify.log.info('Plans already exist, skipping initialization');
+      return;
+    }
 
-      // Basic Plan ($5/month)
-      const basicPlan = new Plan({
-        name: 'Basic',
-        slug: 'basic',
-        description: 'For growing businesses. More features and higher limits.',
-        price: {
-          monthly: 5,
-          yearly: 50, // $50/year (2 months free)
-        },
-        currency: 'USD',
-        features: [
-          { name: 'Full Dashboard', included: true },
-          { name: 'Unlimited Clients', included: true },
-          { name: 'Unlimited Income Tracking', included: true },
-          { name: 'Unlimited Expense Tracking', included: true },
-          { name: 'Advanced Reports', included: true },
-          { name: 'Invoice Management', included: true },
-          { name: 'Goal Tracking', included: true },
-          { name: 'Savings Management', included: true },
-          { name: 'Priority Support', included: true },
-        ],
-        limits: {
-          clients: null, // Unlimited
-          incomeEntries: null, // Unlimited
-          expenseEntries: null, // Unlimited
-          invoices: null, // Unlimited
-          storage: 1000, // 1 GB
-          apiCalls: 10000, // per month
-        },
-        isActive: true,
-        isDefault: false,
-        trialDays: 14, // 14 days free trial
-        sortOrder: 2,
-      });
+    fastify.log.info('Initializing default plans...');
+    
+    // Free Plan
+    const freePlan = {
+      name: 'Free',
+      slug: 'free',
+      description: 'Perfect for getting started. Basic features with limited usage.',
+      price: {
+        monthly: 0,
+        yearly: 0,
+      },
+      currency: 'USD',
+      features: [
+        { name: 'Basic Dashboard', included: true },
+        { name: 'Client Management', included: true, limit: 5 },
+        { name: 'Income Tracking', included: true, limit: 50 },
+        { name: 'Expense Tracking', included: true, limit: 50 },
+        { name: 'Basic Reports', included: true },
+      ],
+      limits: {
+        clients: 5,
+        incomeEntries: 50,
+        expenseEntries: 50,
+        invoices: 10,
+        storage: 100, // 100 MB
+        apiCalls: 1000, // per month
+      },
+      is_active: true,
+      is_default: true,
+      trial_days: 0,
+      sort_order: 1,
+    };
 
-      await freePlan.save();
-      await basicPlan.save();
-      
+    // Basic Plan ($5/month)
+    const basicPlan = {
+      name: 'Basic',
+      slug: 'basic',
+      description: 'For growing businesses. More features and higher limits.',
+      price: {
+        monthly: 5,
+        yearly: 50, // $50/year (2 months free)
+      },
+      currency: 'USD',
+      features: [
+        { name: 'Full Dashboard', included: true },
+        { name: 'Unlimited Clients', included: true },
+        { name: 'Unlimited Income Tracking', included: true },
+        { name: 'Unlimited Expense Tracking', included: true },
+        { name: 'Advanced Reports', included: true },
+        { name: 'Invoice Management', included: true },
+        { name: 'Goal Tracking', included: true },
+        { name: 'Savings Management', included: true },
+        { name: 'Priority Support', included: true },
+      ],
+      limits: {
+        clients: null, // Unlimited
+        incomeEntries: null, // Unlimited
+        expenseEntries: null, // Unlimited
+        invoices: null, // Unlimited
+        storage: 1000, // 1 GB
+        apiCalls: 10000, // per month
+      },
+      is_active: true,
+      is_default: false,
+      trial_days: 14, // 14 days free trial
+      sort_order: 2,
+    };
+
+    const { error: insertError } = await supabase
+      .from('plans')
+      .insert([freePlan, basicPlan]);
+    
+    if (insertError) {
+      fastify.log.error('Error inserting default plans:', insertError);
+    } else {
       fastify.log.info('✓ Default plans initialized: Free and Basic ($5/month)');
     }
   } catch (error) {
