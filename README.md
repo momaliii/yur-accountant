@@ -158,6 +158,132 @@ A comprehensive financial dashboard for media buyers to track income, expenses, 
 - **Smooth Animations**: Polished user experience
 - **Privacy Toggle**: Quick access to hide/show sensitive data
 
+## SaaS Features
+
+### Authentication & User Management
+- **User Registration**: Create account with email and password
+- **Secure Login**: JWT-based authentication via Supabase Auth
+- **User Profiles**: Manage profile information and preferences
+- **Role-Based Access Control (RBAC)**: Admin and user roles
+- **Session Management**: Secure session handling with token refresh
+- **Password Security**: Secure password hashing and validation
+
+### Subscription Management
+- **Multiple Plans**: Free, Basic, Pro, and Enterprise tiers
+- **Flexible Pricing**: Monthly and yearly billing cycles
+- **Plan Features**: Feature-based plan limitations and access
+- **Subscription Status**: Track active, cancelled, expired, or trial subscriptions
+- **Plan Upgrades/Downgrades**: Change plans anytime with prorated billing
+- **Trial Periods**: Free trial support for new subscriptions
+- **Billing History**: Complete payment and invoice history
+- **Subscription Cancellation**: Easy cancellation with retention options
+
+### Payment Processing
+- **Stripe Integration**: Secure payment processing
+- **Multiple Payment Methods**: Credit cards, debit cards, PayPal
+- **Payment History**: Track all transactions and receipts
+- **Webhook Support**: Real-time payment event notifications
+- **Invoice Generation**: Automatic invoice creation for payments
+- **Refund Management**: Handle refunds and chargebacks
+
+### Admin Dashboard
+- **User Management**: View, edit, and manage all users
+- **Analytics & Metrics**: Comprehensive platform statistics
+- **Revenue Tracking**: Monitor subscriptions, payments, and revenue
+- **User Activity Logs**: Track user actions and system events
+- **System Health Monitoring**: Real-time system status and performance
+- **Data Export**: Export user data and reports
+- **Plan Management**: Create, edit, and manage subscription plans
+- **App Version Management**: Manage app updates for different platforms
+
+### Notifications System
+- **In-App Notifications**: Real-time notification center
+- **Unread Count Badge**: Visual indicator for new notifications
+- **Notification Types**: System, payment, subscription, and custom notifications
+- **Mark as Read**: Individual and bulk read status management
+- **Notification Filtering**: Filter by read/unread status
+- **Push Notifications**: Ready for mobile push notification support
+
+### Messaging System
+- **In-App Messaging**: Direct messaging between users and support
+- **Thread-Based Conversations**: Organized message threads
+- **Support Communication**: Direct line to customer support
+- **Message Status**: Read receipts and delivery status
+- **Real-Time Updates**: Live message synchronization
+
+### Support Tickets
+- **Ticket Creation**: Create support tickets for issues
+- **Ticket Status Tracking**: Open, in progress, resolved, closed
+- **Ticket Assignment**: Admin assignment to support staff
+- **Status Filtering**: Filter tickets by status
+- **Ticket History**: Complete ticket conversation history
+- **Priority Levels**: Set ticket priority (low, medium, high, urgent)
+
+### Announcements
+- **Platform Announcements**: System-wide announcements
+- **Important Updates**: Critical information and news
+- **Announcement Management**: Admin can create and manage announcements
+- **Targeted Messaging**: Announcements visible to all users
+
+### Financial Dashboard (SaaS)
+- **Subscription Overview**: Current plan and status
+- **Revenue Tracking**: Track subscription revenue and payments
+- **Payment History**: Complete payment transaction history
+- **Billing Information**: Manage billing details and payment methods
+- **Usage Statistics**: Track feature usage and limits
+
+### Financial Reports (Advanced)
+- **P&L Statements**: Profit & Loss statements
+- **Cash Flow Reports**: Track cash inflows and outflows
+- **Balance Sheets**: Financial position reports
+- **PDF Export**: Professional PDF report generation
+- **Custom Date Ranges**: Flexible reporting periods
+
+### API & Integrations
+- **RESTful API**: Complete API for all features
+- **API Key Management**: Generate and manage API keys (Admin)
+- **Webhook Configuration**: Create and manage webhook endpoints (Admin)
+- **Event Triggers**: Configure webhook events
+- **API Documentation**: Swagger/OpenAPI documentation
+- **Rate Limiting**: API usage limits per plan
+- **Webhook Delivery Statistics**: Track webhook success/failure rates
+
+### Security Features
+- **API Key Authentication**: Secure API access
+- **Webhook Signature Verification**: Secure webhook delivery
+- **JWT Authentication**: Token-based authentication
+- **Role-Based Access Control**: Admin and user permissions
+- **Activity Logging**: Comprehensive audit logs
+- **Security Settings**: User security preferences and 2FA support
+
+### Landing & Pricing Pages
+- **Public Landing Page**: Marketing and feature showcase
+- **Pricing Page**: Plan comparison and selection
+- **Feature Comparison**: Side-by-side plan feature comparison
+- **FAQ Section**: Common questions and answers
+- **Testimonials**: User reviews and ratings
+- **Call-to-Action**: Easy signup and plan selection
+
+### System Monitoring
+- **Health Checks**: System health monitoring endpoints
+- **Performance Metrics**: API response time and throughput
+- **Database Statistics**: Database performance and usage
+- **Error Tracking**: Error logging and monitoring
+- **Uptime Monitoring**: System availability tracking
+
+### Real-Time Features
+- **WebSocket Support**: Real-time data synchronization
+- **Live Updates**: Instant notification delivery
+- **Real-Time Sync**: Multi-device data synchronization
+- **Socket.IO Integration**: Real-time communication
+
+### PWA & Mobile Features
+- **Progressive Web App**: Install as native app
+- **Service Worker**: Offline functionality
+- **Push Notifications**: Mobile push support (ready)
+- **App Manifest**: Native app-like experience
+- **Mobile-Optimized**: Touch-friendly admin dashboard
+
 ## Tech Stack
 
 - **Frontend**: React 18 + Vite
@@ -570,6 +696,36 @@ For multi-device access and automatic backups, enable Supabase sync:
 - [Fix CORS Errors](FIX_CORS_ERROR.md) - Resolve CORS configuration
 - [Railway Setup](RAILWAY_SETUP.md) - Backend server configuration
 - [Mobile Setup Guide](MOBILE_SETUP.md) - Build mobile applications
+
+## SaaS Architecture
+
+### Backend Infrastructure
+- **Fastify Server**: High-performance Node.js server
+- **Supabase**: PostgreSQL database with real-time capabilities
+- **Supabase Auth**: Authentication and user management
+- **Railway Hosting**: Scalable cloud hosting
+- **Stripe Integration**: Payment processing
+- **Redis Caching**: Performance optimization (optional)
+
+### Frontend Architecture
+- **React 18**: Modern React with hooks
+- **Vite**: Fast build tool and dev server
+- **Zustand**: Lightweight state management
+- **IndexedDB**: Local-first data storage
+- **Supabase Client**: Cloud sync and real-time updates
+
+### Data Flow
+1. **Local-First**: All data stored locally in IndexedDB
+2. **Cloud Sync**: Optional Supabase sync for multi-device access
+3. **Real-Time**: WebSocket updates for live data
+4. **Offline Queue**: Changes queued when offline, synced when online
+
+### Security Model
+- **Client-Side**: Local data encryption (IndexedDB)
+- **Server-Side**: Supabase RLS (Row Level Security) policies
+- **API Security**: JWT tokens and API key authentication
+- **Webhook Security**: Signature verification
+- **HTTPS Only**: All connections encrypted
 
 ## Contributing
 
