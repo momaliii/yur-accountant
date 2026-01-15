@@ -24,29 +24,33 @@
 
 ### 3. احصل على Keys
 
-ستجد 3 أقسام:
+ستجد قسمين رئيسيين:
 
-#### 📍 **Project URL**
+#### 📍 **Project URL** (في أعلى الصفحة)
 ```
 https://xxxxx.supabase.co
 ```
 - هذا هو **SUPABASE_URL**
 - انسخه كاملاً
 
-#### 🔓 **anon public** key
+#### 🔓 **Publishable key** (المفتاح العام)
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4eHh4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE2NDE5NzY4MDAsImV4cCI6MTk1NzU1MjgwMH0.xxxxx
+sb_publishable_K2kqSNd4pBmH50vgeSkdCQ_JHm25...
 ```
-- هذا هو **SUPABASE_ANON_KEY**
-- انسخه كاملاً
+- هذا هو **SUPABASE_ANON_KEY** (أو **SUPABASE_PUBLISHABLE_KEY**)
+- يبدأ بـ `sb_publishable_`
+- انسخه كاملاً (اضغط على أيقونة النسخ 📋)
 - ✅ آمن للمشاركة في Frontend code
+- ✅ يمكن استخدامه في المتصفح إذا كان RLS مفعل
 
-#### 🔐 **service_role** key
+#### 🔐 **Secret keys** (المفاتيح السرية)
 ```
-eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4eHh4Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTY0MTk3NjgwMCwiZXhwIjoxOTU3NTUyODAwfQ.xxxxx
+sb_secret_e-LTB...
 ```
 - هذا هو **SUPABASE_SERVICE_ROLE_KEY**
-- انسخه كاملاً
+- يبدأ بـ `sb_secret_`
+- قد يكون مخفياً - اضغط على أيقونة العين 👁️ لإظهاره
+- انسخه كاملاً (اضغط على أيقونة النسخ 📋)
 - ⚠️ **سري جداً - لا تشاركه أبداً!**
 - ⚠️ **لا تضعه في Frontend code**
 - ✅ استخدمه فقط في Server (Railway)
@@ -60,9 +64,12 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4eHh4Iiw
 Dashboard
   └── Settings (⚙️)
       └── API
-          ├── Project URL
-          ├── anon public key
-          └── service_role key
+          ├── Project URL (في أعلى الصفحة)
+          ├── Publishable key (القسم الأول)
+          └── Secret keys (القسم الثاني)
+              └── default (أو أي اسم آخر)
+                  └── اضغط 👁️ لإظهار المفتاح
+                      └── اضغط 📋 لنسخه
 ```
 
 ---
