@@ -1,4 +1,5 @@
-import ActivityLog from '../models/ActivityLog.js';
+// import ActivityLog from '../models/ActivityLog.js'; // Removed - using Supabase now
+import { getSupabaseClient } from '../config/supabase.js';
 
 /**
  * Log user activity
@@ -25,17 +26,28 @@ export async function logActivity({
       return; // Skip logging if required fields are missing
     }
 
-    const activityLog = new ActivityLog({
-      userId,
-      action,
-      entityType,
-      entityId,
-      details,
-      ipAddress,
-      userAgent,
-    });
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      // Supabase not configured - skip logging
+      return;
+    }
 
-    await activityLog.save();
+    // Log to Supabase activity_logs table (if it exists)
+    // For now, just log to console if Supabase table doesn't exist
+    try {
+      await supabase.from('activity_logs').insert({
+        user_id: userId,
+        action,
+        entity_type: entityType,
+        entity_id: entityId,
+        details,
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      });
+    } catch (error) {
+      // Table might not exist - that's okay, just log to console
+      console.log('Activity log (Supabase table may not exist):', { userId, action, entityType, entityId });
+    }
   } catch (error) {
     // Don't throw errors for logging failures - just log to console
     console.error('Failed to log activity:', error);
