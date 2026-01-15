@@ -11,7 +11,8 @@ import SavingsTransaction from '../models/SavingsTransaction.js';
 import OpeningBalance from '../models/OpeningBalance.js';
 import ExpectedIncome from '../models/ExpectedIncome.js';
 import { getUserId } from '../middleware/auth.js';
-import mongoose from 'mongoose';
+// import mongoose from 'mongoose'; // Removed - using Supabase now
+// Note: Migration routes temporarily disabled - need to update to use Supabase
 
 export default async function migrationRoutes(fastify, options) {
   // Helper function to delete all user data from MongoDB

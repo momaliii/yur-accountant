@@ -18,7 +18,7 @@ import savingsRoutes from './routes/savings.js';
 import savingsTransactionsRoutes from './routes/savingsTransactions.js';
 import openingBalancesRoutes from './routes/openingBalances.js';
 import expectedIncomeRoutes from './routes/expectedIncome.js';
-import migrationRoutes from './routes/migration.js';
+// import migrationRoutes from './routes/migration.js'; // Temporarily disabled - uses mongoose
 import healthRoutes from './routes/health.js';
 import notificationRoutes from './routes/notifications.js';
 import subscriptionRoutes from './routes/subscriptions.js';
@@ -217,7 +217,7 @@ await fastify.register(savingsRoutes, { prefix: '/api/savings' });
 await fastify.register(savingsTransactionsRoutes, { prefix: '/api/savings-transactions' });
 await fastify.register(openingBalancesRoutes, { prefix: '/api/opening-balances' });
 await fastify.register(expectedIncomeRoutes, { prefix: '/api/expected-income' });
-await fastify.register(migrationRoutes, { prefix: '/api/migration' });
+// await fastify.register(migrationRoutes, { prefix: '/api/migration' }); // Temporarily disabled - uses mongoose
 await fastify.register(healthRoutes, { prefix: '/api' });
 await fastify.register(notificationRoutes, { prefix: '/api/notifications' });
 await fastify.register(subscriptionRoutes, { prefix: '/api/subscriptions' });
