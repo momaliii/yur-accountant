@@ -1,4 +1,5 @@
-import User from '../models/User.js';
+// import User from '../models/User.js'; // Removed - using Supabase now
+import { getSupabaseClient } from '../config/supabase.js';
 
 export const requireAdmin = async (request, reply) => {
   try {
@@ -9,19 +10,28 @@ export const requireAdmin = async (request, reply) => {
       return reply.code(401).send({ error: 'Unauthorized: Invalid token' });
     }
     
-    const user = await User.findById(userId);
+    const supabase = getSupabaseClient();
+    if (!supabase) {
+      return reply.code(500).send({ error: 'Supabase not configured' });
+    }
     
-    if (!user) {
+    // Get user from Supabase Auth
+    const { data: { user: authUser }, error: authError } = await supabase.auth.admin.getUserById(userId);
+    
+    if (authError || !authUser) {
       return reply.code(404).send({ error: 'User not found' });
     }
     
-    if (user.role !== 'admin') {
+    // Check role from user metadata
+    const userRole = authUser.user_metadata?.role || 'user';
+    
+    if (userRole !== 'admin') {
       return reply.code(403).send({ error: 'Forbidden: Admin access required' });
     }
     
     // Attach user info to request
-    request.user.role = user.role;
-    request.user.userId = user._id;
+    request.user.role = userRole;
+    request.user.userId = userId;
   } catch (error) {
     return reply.code(500).send({ error: 'Error checking admin status' });
   }
